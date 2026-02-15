@@ -1,0 +1,101 @@
+import time
+
+import httpx
+
+from credrank.config import get_api_key
+from credrank.models import PlaceResult, PlaceSearchParams
+
+BASE_URL = "https://places.googleapis.com/v1/places:searchText"
+
+FIELD_MASK = ",".join(
+    [
+        # Essentials ID Only
+        "places.id",
+        "nextPageToken",
+        # Pro
+        "places.displayName",
+        "places.formattedAddress",
+        "places.location",
+        "places.types",
+        # Enterprise
+        "places.rating",
+        "places.userRatingCount",
+    ]
+)
+
+
+def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
+    """Search Google Places and return normalized results.
+
+    Uses the Places API (New) Text Search endpoint. Handles pagination
+    automatically up to params.max_results.
+    """
+    api_key = get_api_key()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": FIELD_MASK,
+    }
+
+    lat, lng = params.location
+    body = {
+        "textQuery": params.query,
+        "locationBias": {
+            "circle": {
+                "center": {"latitude": lat, "longitude": lng},
+                "radius": float(params.radius_m),
+            }
+        },
+        "pageSize": min(params.max_results, 20),  # API max page size is 20
+    }
+
+    results: list[PlaceResult] = []
+    page_token: str | None = None
+
+    with httpx.Client(timeout=10) as client:
+        while len(results) < params.max_results:
+            if page_token:
+                body["pageToken"] = page_token
+
+            response = client.post(BASE_URL, headers=headers, json=body)
+
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Google Places request failed: {response.status_code} - {response.text}"
+                )
+
+            data = response.json()
+
+            # Empty response means no results
+            if "places" not in data:
+                break
+
+            for place in data["places"]:
+                if len(results) >= params.max_results:
+                    break
+                results.append(_parse_place(place))
+
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break  # No more pages
+
+            time.sleep(2)  # Required delay before using nextPageToken
+
+    return results
+
+
+def _parse_place(place: dict) -> PlaceResult:
+    """Map a raw Google Places API response object to our PlaceResult model."""
+    location = place.get("location", {})
+    display_name = place.get("displayName", {})
+
+    return PlaceResult(
+        place_id=place.get("id", ""),
+        name=display_name.get("text", ""),
+        rating=place.get("rating"),
+        user_rating_count=place.get("userRatingCount"),
+        address=place.get("formattedAddress"),
+        lat=location.get("latitude"),
+        lng=location.get("longitude"),
+        types=place.get("types", []),
+    )
