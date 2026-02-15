@@ -42,7 +42,7 @@ def test_search_places_maps_fields_correctly() -> None:
         return_value=httpx.Response(200, json=FAKE_RESPONSE)
     )
 
-    results = PARAMS
+    results = search_places(PARAMS)
 
     assert len(results) == 2
 

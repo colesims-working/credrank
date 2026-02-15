@@ -1,3 +1,4 @@
+import math
 import time
 
 import httpx
@@ -24,6 +25,30 @@ FIELD_MASK = ",".join(
 )
 
 
+def _circle_to_bounding_box(lat: float, lng: float, radius_m: float) -> dict:
+    """Convert a center point + radius into a rectangular bounding box.
+
+    Approximation using the fact that:
+        1 degree latitude  ≈ 111,320 meters (constant)
+        1 degree longitude ≈ 111,320 * cos(latitude) meters (varies)
+    """
+    delta_lat = radius_m / 111_320
+    delta_lng = radius_m / (111_320 * math.cos(math.radians(lat)))
+
+    return {
+        "rectangle": {
+            "low": {
+                "latitude": lat - delta_lat,
+                "longitude": lng - delta_lng,
+            },
+            "high": {
+                "latitude": lat + delta_lat,
+                "longitude": lng + delta_lng,
+            },
+        }
+    }
+
+
 def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
     """Search Google Places and return normalized results.
 
@@ -40,13 +65,10 @@ def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
     lat, lng = params.location
     body = {
         "textQuery": params.query,
-        "locationBias": {
-            "circle": {
-                "center": {"latitude": lat, "longitude": lng},
-                "radius": float(params.radius_m),
-            }
-        },
-        "pageSize": min(params.max_results, 20),  # API max page size is 20
+        "locationRestriction": _circle_to_bounding_box(
+            lat, lng, float(params.radius_m)
+        ),
+        "pageSize": min(params.max_results, 20),
     }
 
     results: list[PlaceResult] = []
