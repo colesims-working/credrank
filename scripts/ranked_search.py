@@ -5,9 +5,9 @@ from credrank.models import PlaceSearchParams
 from credrank.ranking import rank_places
 
 # --- Config (tweak these and re-run) ---
-QUERY = "pizza"
+QUERY = "chain fast casual takeout dinner"
 LAT, LNG = 37.603, -77.261  # Richmond, VA
-RADIUS_M = 20000
+RADIUS_M = 10000
 MAX_RESULTS = 60
 
 

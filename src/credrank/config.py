@@ -3,13 +3,22 @@ import os
 from dotenv import load_dotenv
 
 
-def get_api_key() -> str:
-    """Load and return the Google Maps API key from environment."""
+def _get_env(key: str) -> str:
+    """Load an environment variable, raising a clear error if missing."""
     load_dotenv()
-    key = os.environ.get("GOOGLE_MAPS_API_KEY")
-    if not key:
+    value = os.environ.get(key)
+    if not value:
         raise RuntimeError(
-            "GOOGLE_MAPS_API_KEY is not set. "
-            "Copy .env.example to .env and add your key."
+            f"{key} is not set. Copy .env.example to .env and add your key."
         )
-    return key
+    return value
+
+
+def get_api_key() -> str:
+    """Return the Google Maps API key."""
+    return _get_env("GOOGLE_MAPS_API_KEY")
+
+
+def get_gemini_key() -> str:
+    """Return the Google Gemini API key."""
+    return _get_env("GOOGLE_GEMINI_API_KEY")
