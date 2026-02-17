@@ -5,7 +5,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from credrank.api import app
-from credrank.models import PlaceResult
+from credrank.models import PlaceResult, Review
 
 client = TestClient(app)
 
@@ -42,6 +42,19 @@ FAKE_PLACES = [
     ),
 ]
 
+FAKE_DETAIL = PlaceResult(
+    place_id="ChIJ_1",
+    name="Top Spot",
+    rating=4.7,
+    user_rating_count=500,
+    address="123 Main St",
+    lat=37.54,
+    lng=-77.43,
+    types=["restaurant"],
+    reviews=[Review(rating=5, text="Amazing pizza!", author="Alice")],
+    editorial_summary="A local favorite.",
+)
+
 
 @patch("credrank.api.search_places", return_value=FAKE_PLACES)
 def test_search_returns_ranked_results(mock_search):
@@ -60,11 +73,9 @@ def test_search_returns_ranked_results(mock_search):
     assert data["result_count"] == 3
     assert data["places"][0]["rank"] == 1
 
-    # Verify ranked by CredScore descending
     scores = [p["credscore"] for p in data["places"]]
     assert scores == sorted(scores, reverse=True)
 
-    # Verify all CredScores are bounded
     for p in data["places"]:
         assert 0.0 <= p["credscore"] <= 100.0
 
@@ -86,6 +97,64 @@ def test_search_empty_results(mock_search):
     assert data["places"] == []
 
 
-def test_search_validates_input():
+def test_search_validates_required_fields():
     resp = client.post("/api/search", json={"lat": 37.54, "lng": -77.43})
-    assert resp.status_code == 422  # Missing required field 'query'
+    assert resp.status_code == 422
+
+
+def test_search_validates_lat_bounds():
+    resp = client.post(
+        "/api/search",
+        json={
+            "query": "pizza",
+            "lat": 91.0,
+            "lng": -77.43,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_search_validates_radius_cap():
+    resp = client.post(
+        "/api/search",
+        json={
+            "query": "pizza",
+            "lat": 37.54,
+            "lng": -77.43,
+            "radius_m": 100000,
+        },
+    )
+    assert resp.status_code == 422
+
+
+@patch("credrank.api.get_place_details", return_value=FAKE_DETAIL)
+def test_summarize_returns_summary(mock_details):
+    resp = client.post("/api/summarize", json={"place_id": "ChIJ_1"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["place_id"] == "ChIJ_1"
+    assert data["name"] == "Top Spot"
+    assert len(data["summary"]) > 0
+
+
+@patch("credrank.api.get_place_details", return_value=None)
+def test_summarize_place_not_found(mock_details):
+    resp = client.post("/api/summarize", json={"place_id": "nonexistent"})
+    assert resp.status_code == 404
+
+
+@patch("credrank.api.get_place_details", return_value=FAKE_DETAIL)
+def test_recommend_returns_analysis(mock_details):
+    resp = client.post("/api/recommend", json={"place_id": "ChIJ_1"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["place_id"] == "ChIJ_1"
+    assert "recommendations" in data
+    assert "avoid" in data
+    assert len(data["summary"]) > 0
+
+
+@patch("credrank.api.get_place_details", return_value=None)
+def test_recommend_place_not_found(mock_details):
+    resp = client.post("/api/recommend", json={"place_id": "nonexistent"})
+    assert resp.status_code == 404

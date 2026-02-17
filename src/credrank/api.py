@@ -4,9 +4,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from credrank.maps_client import search_places
+from credrank.maps_client import get_place_details, search_places
 from credrank.models import PlaceSearchParams
 from credrank.ranking import rank_places
 from credrank.recommender import recommend_items
@@ -14,7 +14,6 @@ from credrank.summarizer import summarize_place
 
 app = FastAPI(title="CredRank", version="0.1.0")
 
-# Allow the frontend to talk to the backend during local dev
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,11 +26,11 @@ app.add_middleware(
 
 
 class SearchRequest(BaseModel):
-    query: str
-    lat: float
-    lng: float
-    radius_m: int = 8000
-    max_results: int = 60
+    query: str = Field(min_length=1, max_length=200)
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    radius_m: int = Field(default=8000, gt=0, le=50000)
+    max_results: int = Field(default=20, gt=0, le=60)
 
 
 class PlaceResponse(BaseModel):
@@ -47,12 +46,23 @@ class PlaceResponse(BaseModel):
     lng: float | None
     types: list[str]
     summary: str | None = None
+    credible: bool = True
 
 
 class SearchResponse(BaseModel):
     query: str
     result_count: int
     places: list[PlaceResponse]
+
+
+class PlaceIdRequest(BaseModel):
+    place_id: str = Field(min_length=1, max_length=500)
+
+
+class SummaryResponse(BaseModel):
+    place_id: str
+    name: str
+    summary: str
 
 
 class RecommendResponse(BaseModel):
@@ -68,7 +78,10 @@ class RecommendResponse(BaseModel):
 
 @app.post("/api/search", response_model=SearchResponse)
 def search(req: SearchRequest):
-    """Search, rank, and return places with CredScores."""
+    """Search, rank, and return places with CredScores.
+
+    Uses the lightweight field mask — no reviews fetched, lower API cost.
+    """
     params = PlaceSearchParams(
         query=req.query,
         location=(req.lat, req.lng),
@@ -108,42 +121,31 @@ def search(req: SearchRequest):
     )
 
 
-@app.post("/api/summarize/{place_rank}")
-def summarize(place_rank: int, req: SearchRequest):
-    """Generate an LLM summary for a specific ranked place."""
-    params = PlaceSearchParams(
-        query=req.query,
-        location=(req.lat, req.lng),
-        radius_m=req.radius_m,
-        max_results=req.max_results,
-    )
+@app.post("/api/summarize", response_model=SummaryResponse)
+def summarize(req: PlaceIdRequest):
+    """Generate an LLM summary for a specific place by ID.
 
-    places = search_places(params)
-    ranked = rank_places(places)
+    Fetches full details (reviews + summaries) for just this one place.
+    """
+    place = get_place_details(req.place_id)
+    if not place:
+        raise HTTPException(status_code=404, detail="Place not found")
 
-    for entry in ranked:
-        if entry["rank"] == place_rank:
-            summary = summarize_place(entry["place"])
-            return {"rank": place_rank, "summary": summary}
-
-    raise HTTPException(status_code=404, detail=f"No place at rank {place_rank}")
+    summary = summarize_place(place)
+    return SummaryResponse(place_id=place.place_id, name=place.name, summary=summary)
 
 
 @app.post("/api/recommend", response_model=RecommendResponse)
-def recommend(req: SearchRequest):
-    """Get item recommendations for the top result of a search."""
-    params = PlaceSearchParams(
-        query=req.query,
-        location=(req.lat, req.lng),
-        radius_m=req.radius_m,
-        max_results=1,
-    )
+def recommend(req: PlaceIdRequest):
+    """Get item recommendations for a specific place by ID.
 
-    places = search_places(params)
-    if not places:
+    Fetches full details (reviews + summaries) for deep analysis.
+    """
+    place = get_place_details(req.place_id)
+    if not place:
         raise HTTPException(status_code=404, detail="Place not found")
 
-    result = recommend_items(places[0])
+    result = recommend_items(place)
     return RecommendResponse(**result)
 
 

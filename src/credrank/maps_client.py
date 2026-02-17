@@ -1,4 +1,5 @@
-import math
+"""Google Places API (New) client."""
+
 import time
 
 import httpx
@@ -7,108 +8,55 @@ from credrank.config import get_api_key
 from credrank.models import PlaceResult, PlaceSearchParams, Review
 
 BASE_URL = "https://places.googleapis.com/v1/places:searchText"
+DETAIL_URL = "https://places.googleapis.com/v1/places"
 
-FIELD_MASK = ",".join(
+# Lightweight mask for search results — no reviews, no summaries.
+# Billed at Enterprise SKU (rating + userRatingCount) but skips Atmosphere.
+SEARCH_FIELD_MASK = ",".join(
     [
-        # Essentials ID Only
         "places.id",
         "nextPageToken",
-        # Pro
         "places.displayName",
         "places.formattedAddress",
         "places.location",
         "places.types",
-        # Enterprise
         "places.rating",
         "places.userRatingCount",
-        # Enterprise + Atmosphere
-        "places.reviews",
-        "places.editorialSummary",
-        "places.reviewSummary",
-        "places.generativeSummary",
+    ]
+)
+
+# Full mask for place details — includes reviews and summaries for LLM analysis.
+# Billed at Enterprise + Atmosphere SKU.
+DETAIL_FIELD_MASK = ",".join(
+    [
+        "id",
+        "displayName",
+        "formattedAddress",
+        "location",
+        "types",
+        "rating",
+        "userRatingCount",
+        "reviews",
+        "editorialSummary",
+        "reviewSummary",
+        "generativeSummary",
     ]
 )
 
 
-def _circle_to_bounding_box(lat: float, lng: float, radius_m: float) -> dict:
-    """Convert a center point + radius into a rectangular bounding box.
-
-    Approximation using the fact that:
-        1 degree latitude  ≈ 111,320 meters (constant)
-        1 degree longitude ≈ 111,320 * cos(latitude) meters (varies)
-    """
-    delta_lat = radius_m / 111_320
-    delta_lng = radius_m / (111_320 * math.cos(math.radians(lat)))
+def _circle_to_bounding_box(lat: float, lng: float, radius_m: int) -> dict:
+    """Convert a circle (center + radius) to a rectangular locationRestriction."""
+    d_lat = radius_m / 111_320
+    d_lng = radius_m / (
+        111_320 * __import__("math").cos(__import__("math").radians(lat))
+    )
 
     return {
         "rectangle": {
-            "low": {
-                "latitude": lat - delta_lat,
-                "longitude": lng - delta_lng,
-            },
-            "high": {
-                "latitude": lat + delta_lat,
-                "longitude": lng + delta_lng,
-            },
+            "low": {"latitude": lat - d_lat, "longitude": lng - d_lng},
+            "high": {"latitude": lat + d_lat, "longitude": lng + d_lng},
         }
     }
-
-
-def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
-    """Search Google Places and return normalized results.
-
-    Uses the Places API (New) Text Search endpoint. Handles pagination
-    automatically up to params.max_results.
-    """
-    api_key = get_api_key()
-    headers = {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": api_key,
-        "X-Goog-FieldMask": FIELD_MASK,
-    }
-
-    lat, lng = params.location
-    body = {
-        "textQuery": params.query,
-        "locationRestriction": _circle_to_bounding_box(
-            lat, lng, float(params.radius_m)
-        ),
-        "pageSize": min(params.max_results, 20),
-    }
-
-    results: list[PlaceResult] = []
-    page_token: str | None = None
-
-    with httpx.Client(timeout=10) as client:
-        while len(results) < params.max_results:
-            if page_token:
-                body["pageToken"] = page_token
-
-            response = client.post(BASE_URL, headers=headers, json=body)
-
-            if response.status_code != 200:
-                raise RuntimeError(
-                    f"Google Places request failed: {response.status_code} - {response.text}"
-                )
-
-            data = response.json()
-
-            # Empty response means no results
-            if "places" not in data:
-                break
-
-            for place in data["places"]:
-                if len(results) >= params.max_results:
-                    break
-                results.append(_parse_place(place))
-
-            page_token = data.get("nextPageToken")
-            if not page_token:
-                break  # No more pages
-
-            time.sleep(2)  # Required delay before using nextPageToken
-
-    return results
 
 
 def _parse_place(place: dict) -> PlaceResult:
@@ -152,3 +100,61 @@ def _parse_place(place: dict) -> PlaceResult:
         if isinstance(generative, dict)
         else None,
     )
+
+
+def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
+    """Search for places using the lightweight field mask (no reviews)."""
+    lat, lng = params.location
+
+    body = {
+        "textQuery": params.query,
+        "locationRestriction": _circle_to_bounding_box(lat, lng, params.radius_m),
+        "maxResultCount": min(params.max_results, 20),
+    }
+
+    headers = {
+        "X-Goog-Api-Key": get_api_key(),
+        "X-Goog-FieldMask": SEARCH_FIELD_MASK,
+        "Content-Type": "application/json",
+    }
+
+    results: list[PlaceResult] = []
+
+    with httpx.Client() as client:
+        while True:
+            resp = client.post(BASE_URL, json=body, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+
+            for place in data.get("places", []):
+                results.append(_parse_place(place))
+
+            next_token = data.get("nextPageToken")
+            if not next_token or len(results) >= params.max_results:
+                break
+
+            body["pageToken"] = next_token
+            time.sleep(2)
+
+    return results[: params.max_results]
+
+
+def get_place_details(place_id: str) -> PlaceResult | None:
+    """Fetch full details for a single place by ID, including reviews and summaries.
+
+    This uses the Atmosphere SKU — only call it when you need LLM input.
+    """
+    url = f"{DETAIL_URL}/{place_id}"
+
+    headers = {
+        "X-Goog-Api-Key": get_api_key(),
+        "X-Goog-FieldMask": DETAIL_FIELD_MASK,
+        "Content-Type": "application/json",
+    }
+
+    with httpx.Client() as client:
+        resp = client.get(url, headers=headers)
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return _parse_place(resp.json())

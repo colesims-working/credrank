@@ -499,19 +499,17 @@
         async function loadSummary(rank) {
             const btn = document.getElementById('summaryBtn-' + rank);
             const el = document.getElementById('summary-' + rank);
+            const place = currentResults.find(p => p.rank === rank);
+            if (!place) return;
+
             btn.disabled = true;
             btn.textContent = 'Loading...';
 
             try {
-                const query = document.getElementById('query').value;
-                const lat = parseFloat(document.getElementById('lat').value);
-                const lng = parseFloat(document.getElementById('lng').value);
-                const radius = parseInt(document.getElementById('radius').value);
-
-                const resp = await fetch(`/api/summarize/${rank}`, {
+                const resp = await fetch('/api/summarize', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ query, lat, lng, radius_m: radius, max_results: 20 })
+                    body: JSON.stringify({ place_id: place.place_id })
                 });
                 const data = await resp.json();
                 el.textContent = data.summary;
@@ -539,13 +537,7 @@
                 const resp = await fetch('/api/recommend', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        query: place.name,
-                        lat: place.lat,
-                        lng: place.lng,
-                        radius_m: 2000,
-                        max_results: 1
-                    })
+                    body: JSON.stringify({ place_id: place.place_id })
                 });
                 const data = await resp.json();
 
