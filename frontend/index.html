@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CredRank</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #0f1117;
+            color: #e4e4e7;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            padding: 16px 24px;
+            background: #161822;
+            border-bottom: 1px solid #2a2d3a;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            color: #818cf8;
+            margin-right: 8px;
+        }
+
+        .search-bar {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+            min-width: 300px;
+        }
+
+        input, select {
+            background: #1e2030;
+            border: 1px solid #2a2d3a;
+            color: #e4e4e7;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        input:focus { outline: none; border-color: #818cf8; }
+        input::placeholder { color: #6b7280; }
+
+        .search-bar input[type="text"] { flex: 1; }
+
+        button {
+            background: #818cf8;
+            color: #0f1117;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: #6366f1; }
+        button:disabled { background: #3f3f46; cursor: not-allowed; color: #71717a; }
+
+        .content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .results-panel {
+            width: 440px;
+            overflow-y: auto;
+            border-right: 1px solid #2a2d3a;
+            padding: 0;
+        }
+
+        .result-card {
+            padding: 14px 18px;
+            border-bottom: 1px solid #1e2030;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
+        .result-card:hover { background: #1a1c2e; }
+        .result-card.active { background: #1e2040; border-left: 3px solid #818cf8; }
+
+        .rank-badge {
+            background: #818cf8;
+            color: #0f1117;
+            font-weight: 700;
+            font-size: 13px;
+            min-width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .place-info { flex: 1; min-width: 0; }
+        .place-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .place-meta {
+            font-size: 12px;
+            color: #a1a1aa;
+            display: flex;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+        .place-meta .score { color: #818cf8; font-weight: 600; }
+        .place-meta .rating { color: #facc15; }
+        .place-address {
+            font-size: 11px;
+            color: #71717a;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .place-summary {
+            font-size: 12px;
+            color: #a1a1aa;
+            margin-top: 6px;
+            font-style: italic;
+            line-height: 1.4;
+        }
+
+        .summary-btn {
+            background: none;
+            border: 1px solid #2a2d3a;
+            color: #818cf8;
+            padding: 3px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+            margin-top: 6px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .summary-btn:hover { background: #1e2040; }
+        .summary-btn:disabled { color: #3f3f46; border-color: #1e2030; }
+
+        #map { flex: 1; }
+
+        .status-bar {
+            padding: 8px 18px;
+            background: #161822;
+            border-top: 1px solid #2a2d3a;
+            font-size: 12px;
+            color: #71717a;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #71717a;
+            font-size: 14px;
+        }
+
+        /* Recommend modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.visible { display: flex; }
+
+        .modal {
+            background: #161822;
+            border: 1px solid #2a2d3a;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal h2 { font-size: 18px; color: #818cf8; margin-bottom: 4px; }
+        .modal .subtitle { font-size: 13px; color: #71717a; margin-bottom: 16px; }
+        .modal p { font-size: 14px; line-height: 1.6; margin-bottom: 12px; }
+        .modal .rec-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #1e2030;
+        }
+        .modal .rec-item:last-child { border: none; }
+        .modal .rec-name { font-weight: 600; color: #e4e4e7; }
+        .modal .rec-why { font-size: 13px; color: #a1a1aa; }
+        .modal .rec-mentions { font-size: 11px; color: #818cf8; }
+        .modal .avoid-section { margin-top: 16px; }
+        .modal .avoid-label { color: #f87171; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+        .modal .avoid-item { font-size: 13px; color: #a1a1aa; padding: 4px 0; }
+        .modal .close-btn {
+            margin-top: 16px;
+            width: 100%;
+            background: #2a2d3a;
+            color: #e4e4e7;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>CredRank</h1>
+        <div class="search-bar">
+            <input type="text" id="query" placeholder="What are you looking for?" value="best pizza">
+            <input type="number" id="lat" placeholder="Latitude" value="37.603" step="0.001" style="width:100px">
+            <input type="number" id="lng" placeholder="Longitude" value="-77.261" step="0.001" style="width:100px">
+            <input type="number" id="radius" placeholder="Radius (m)" value="8000" step="500" style="width:90px">
+            <button id="searchBtn" onclick="doSearch()">Search</button>
+        </div>
+    </header>
+
+    <div class="content">
+        <div class="results-panel" id="resultsPanel">
+            <div class="loading">Search for something to get started</div>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <div class="status-bar" id="statusBar">Ready</div>
+
+    <!-- Recommend modal -->
+    <div class="modal-overlay" id="recommendModal">
+        <div class="modal">
+            <h2 id="modalTitle"></h2>
+            <p class="subtitle" id="modalSubtitle"></p>
+            <p id="modalSummary"></p>
+            <div id="modalRecs"></div>
+            <div id="modalAvoid"></div>
+            <button class="close-btn" onclick="closeModal()">Close</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // --- Map Setup ---
+        const map = L.map('map').setView([37.603, -77.261], 12);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OSM &amp; CARTO',
+            maxZoom: 19
+        }).addTo(map);
+
+        let placeMarkers = [];
+        let searchRect = null;
+        let searchCircle = null;
+        let centerMarker = null;
+        let radiusHandle = null;
+        let currentResults = [];
+
+        // --- Boundary math (mirrors Python _circle_to_bounding_box) ---
+        function circleToBounds(lat, lng, radiusM) {
+            const dLat = radiusM / 111320;
+            const dLng = radiusM / (111320 * Math.cos(lat * Math.PI / 180));
+            return [
+                [lat - dLat, lng - dLng],  // southwest
+                [lat + dLat, lng + dLng],  // northeast
+            ];
+        }
+
+        // --- Draw interactive search boundary ---
+        function drawSearchBoundary() {
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lng = parseFloat(document.getElementById('lng').value);
+            const radius = parseInt(document.getElementById('radius').value);
+
+            // Clear previous boundary elements
+            if (searchRect) map.removeLayer(searchRect);
+            if (searchCircle) map.removeLayer(searchCircle);
+            if (centerMarker) map.removeLayer(centerMarker);
+            if (radiusHandle) map.removeLayer(radiusHandle);
+
+            // Rectangle (actual API search boundary)
+            const bounds = circleToBounds(lat, lng, radius);
+            searchRect = L.rectangle(bounds, {
+                color: '#818cf8',
+                fillColor: '#818cf8',
+                fillOpacity: 0.04,
+                weight: 2,
+                dashArray: '8 4',
+            }).addTo(map);
+
+            // Circle overlay (what user conceptually asked for)
+            searchCircle = L.circle([lat, lng], {
+                radius: radius,
+                color: '#818cf8',
+                fillOpacity: 0,
+                weight: 1,
+                opacity: 0.3,
+            }).addTo(map);
+
+            // Draggable center marker
+            centerMarker = L.marker([lat, lng], {
+                draggable: true,
+                icon: L.divIcon({
+                    className: '',
+                    html: '<div style="width:14px;height:14px;background:#818cf8;border:2px solid #0f1117;border-radius:50%;"></div>',
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7],
+                }),
+            }).addTo(map);
+
+            centerMarker.bindTooltip('Drag to move center', { direction: 'top', offset: [0, -10] });
+
+            centerMarker.on('dragend', function(e) {
+                const pos = e.target.getLatLng();
+                document.getElementById('lat').value = pos.lat.toFixed(4);
+                document.getElementById('lng').value = pos.lng.toFixed(4);
+                drawSearchBoundary();
+            });
+
+            // Draggable radius handle (east edge of circle)
+            const handleLat = lat;
+            const handleLng = lng + radius / (111320 * Math.cos(lat * Math.PI / 180));
+
+            radiusHandle = L.marker([handleLat, handleLng], {
+                draggable: true,
+                icon: L.divIcon({
+                    className: '',
+                    html: '<div style="width:10px;height:10px;background:#facc15;border:2px solid #0f1117;border-radius:50%;"></div>',
+                    iconSize: [10, 10],
+                    iconAnchor: [5, 5],
+                }),
+            }).addTo(map);
+
+            radiusHandle.bindTooltip('Drag to resize', { direction: 'top', offset: [0, -10] });
+
+            radiusHandle.on('drag', function(e) {
+                const center = centerMarker.getLatLng();
+                const handle = e.target.getLatLng();
+                const newRadius = Math.round(center.distanceTo(handle));
+                document.getElementById('radius').value = newRadius;
+
+                // Live update the visual boundary
+                if (searchRect) map.removeLayer(searchRect);
+                if (searchCircle) map.removeLayer(searchCircle);
+
+                const newBounds = circleToBounds(center.lat, center.lng, newRadius);
+                searchRect = L.rectangle(newBounds, {
+                    color: '#818cf8',
+                    fillColor: '#818cf8',
+                    fillOpacity: 0.04,
+                    weight: 2,
+                    dashArray: '8 4',
+                }).addTo(map);
+
+                searchCircle = L.circle([center.lat, center.lng], {
+                    radius: newRadius,
+                    color: '#818cf8',
+                    fillOpacity: 0,
+                    weight: 1,
+                    opacity: 0.3,
+                }).addTo(map);
+            });
+        }
+
+        // Draw initial boundary on load
+        drawSearchBoundary();
+
+        // Redraw when inputs change manually
+        ['lat', 'lng', 'radius'].forEach(id => {
+            document.getElementById(id).addEventListener('change', drawSearchBoundary);
+        });
+
+        // --- Search ---
+        async function doSearch() {
+            const query = document.getElementById('query').value;
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lng = parseFloat(document.getElementById('lng').value);
+            const radius = parseInt(document.getElementById('radius').value);
+            const btn = document.getElementById('searchBtn');
+
+            btn.disabled = true;
+            btn.textContent = 'Searching...';
+            setStatus('Searching and ranking...');
+
+            try {
+                const resp = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ query, lat, lng, radius_m: radius, max_results: 20 })
+                });
+                const data = await resp.json();
+                currentResults = data.places;
+                renderResults(data);
+                renderPlaceMarkers(data.places);
+                setStatus(`Found ${data.result_count} results for "${data.query}"`);
+            } catch (e) {
+                setStatus('Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Search';
+            }
+        }
+
+        // --- Render Results Panel ---
+        function renderResults(data) {
+            const panel = document.getElementById('resultsPanel');
+
+            if (!data.places.length) {
+                panel.innerHTML = '<div class="loading">No results found</div>';
+                return;
+            }
+
+            panel.innerHTML = data.places.map(p => `
+                <div class="result-card" id="card-${p.rank}" onclick="focusPlace(${p.rank})">
+                    <div class="rank-badge">${p.rank}</div>
+                    <div class="place-info">
+                        <div class="place-name">${p.name}</div>
+                        <div class="place-meta">
+                            <span class="score">CS ${p.credscore}</span>
+                            <span class="rating">${p.rating ? '★ ' + p.rating : 'N/A'}</span>
+                            <span>${p.user_rating_count ? p.user_rating_count.toLocaleString() + ' reviews' : ''}</span>
+                        </div>
+                        <div class="place-address">${p.address || ''}</div>
+                        <div class="place-summary" id="summary-${p.rank}"></div>
+                        <button class="summary-btn" id="summaryBtn-${p.rank}" onclick="event.stopPropagation(); loadSummary(${p.rank})">
+                            Summarize
+                        </button>
+                        <button class="summary-btn" onclick="event.stopPropagation(); loadRecommend(${p.rank})" style="margin-left:4px">
+                            What to order
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // --- Render place markers (separate from boundary) ---
+        function renderPlaceMarkers(places) {
+            // Clear previous place markers only
+            placeMarkers.forEach(m => map.removeLayer(m));
+            placeMarkers = [];
+
+            places.forEach(p => {
+                if (!p.lat || !p.lng) return;
+
+                const marker = L.circleMarker([p.lat, p.lng], {
+                    radius: Math.max(6, 14 - p.rank * 0.5),
+                    fillColor: getScoreColor(p.credscore),
+                    color: '#0f1117',
+                    weight: 2,
+                    fillOpacity: 0.9
+                }).addTo(map);
+
+                marker.bindPopup(`
+                    <div style="font-family:system-ui;font-size:13px;min-width:180px">
+                        <strong>#${p.rank} ${p.name}</strong><br>
+                        <span style="color:#818cf8;font-weight:600">CredScore: ${p.credscore}</span><br>
+                        ${p.rating ? '★ ' + p.rating + ' (' + p.user_rating_count.toLocaleString() + ')' : 'Unrated'}<br>
+                        <small>${p.address || ''}</small>
+                    </div>
+                `);
+
+                marker.placeRank = p.rank;
+                placeMarkers.push(marker);
+            });
+        }
+
+        function getScoreColor(score) {
+            if (score >= 80) return '#4ade80';
+            if (score >= 60) return '#818cf8';
+            if (score >= 40) return '#facc15';
+            if (score >= 20) return '#fb923c';
+            return '#f87171';
+        }
+
+        // --- Focus on a place ---
+        function focusPlace(rank) {
+            document.querySelectorAll('.result-card').forEach(c => c.classList.remove('active'));
+            document.getElementById('card-' + rank).classList.add('active');
+
+            const marker = placeMarkers.find(m => m.placeRank === rank);
+            if (marker) {
+                map.setView(marker.getLatLng(), 15);
+                marker.openPopup();
+            }
+        }
+
+        // --- Load summary for a place ---
+        async function loadSummary(rank) {
+            const btn = document.getElementById('summaryBtn-' + rank);
+            const el = document.getElementById('summary-' + rank);
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+
+            try {
+                const query = document.getElementById('query').value;
+                const lat = parseFloat(document.getElementById('lat').value);
+                const lng = parseFloat(document.getElementById('lng').value);
+                const radius = parseInt(document.getElementById('radius').value);
+
+                const resp = await fetch(`/api/summarize/${rank}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ query, lat, lng, radius_m: radius, max_results: 20 })
+                });
+                const data = await resp.json();
+                el.textContent = data.summary;
+                btn.style.display = 'none';
+            } catch (e) {
+                el.textContent = 'Failed to load summary';
+                btn.disabled = false;
+                btn.textContent = 'Retry';
+            }
+        }
+
+        // --- Recommend modal ---
+        async function loadRecommend(rank) {
+            const place = currentResults.find(p => p.rank === rank);
+            if (!place) return;
+
+            document.getElementById('modalTitle').textContent = place.name;
+            document.getElementById('modalSubtitle').textContent = 'Analyzing reviews...';
+            document.getElementById('modalSummary').textContent = '';
+            document.getElementById('modalRecs').innerHTML = '';
+            document.getElementById('modalAvoid').innerHTML = '';
+            document.getElementById('recommendModal').classList.add('visible');
+
+            try {
+                const resp = await fetch('/api/recommend', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        query: place.name,
+                        lat: place.lat,
+                        lng: place.lng,
+                        radius_m: 2000,
+                        max_results: 1
+                    })
+                });
+                const data = await resp.json();
+
+                document.getElementById('modalSubtitle').textContent = 'What should you order?';
+                document.getElementById('modalSummary').textContent = data.summary;
+
+                if (data.recommendations.length) {
+                    document.getElementById('modalRecs').innerHTML = data.recommendations.map((r, i) => `
+                        <div class="rec-item">
+                            <span class="rec-name">${i + 1}. ${r.item}</span>
+                            ${r.mentions ? `<span class="rec-mentions"> (mentioned ${r.mentions}x)</span>` : ''}
+                            <div class="rec-why">${r.why}</div>
+                        </div>
+                    `).join('');
+                }
+
+                if (data.avoid && data.avoid.length) {
+                    document.getElementById('modalAvoid').innerHTML = `
+                        <div class="avoid-section">
+                            <div class="avoid-label">Maybe skip:</div>
+                            ${data.avoid.map(a => `
+                                <div class="avoid-item">${a.item} — ${a.why}</div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                document.getElementById('modalSubtitle').textContent = 'Error loading recommendations';
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('recommendModal').classList.remove('visible');
+        }
+
+        document.getElementById('recommendModal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+
+        // --- Status bar ---
+        function setStatus(msg) {
+            document.getElementById('statusBar').textContent = msg;
+        }
+
+        // --- Enter key to search ---
+        document.getElementById('query').addEventListener('keydown', e => {
+            if (e.key === 'Enter') doSearch();
+        });
+    </script>
+</body>
+</html>

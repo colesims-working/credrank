@@ -8,12 +8,12 @@ from credrank.models import PlaceResult
 def compute_prior(places: list[PlaceResult]) -> tuple[float, float]:
     """Compute the prior mean (m) and confidence constant (C) from the result set.
 
-    m = mean rating across all rated places
-    C = median review count across all rated places
-
-    These values anchor the Bayesian average: places with few reviews
-    get pulled toward m, while places with many reviews (>> C) are
-    largely unaffected.
+    m = mean rating across all rated places.
+    C = 25th percentile of review counts (Q1), computed using Python's
+        standard 'exclusive' interpolation method. This sets the credibility
+        threshold: places with fewer reviews than C get pulled toward the
+        population mean, while places with more reviews are trusted at
+        close to their own rating.
 
     Returns:
         (m, C) tuple. Returns (0.0, 0.0) if no rated places exist.
@@ -26,7 +26,13 @@ def compute_prior(places: list[PlaceResult]) -> tuple[float, float]:
         return 0.0, 0.0
 
     m = statistics.mean(p.rating for p in rated)
-    c = statistics.median(p.user_rating_count for p in rated)
+
+    review_counts = [p.user_rating_count for p in rated]
+
+    if len(review_counts) >= 2:
+        c = statistics.quantiles(review_counts, n=4)[0]  # Q1, 25th percentile
+    else:
+        c = float(review_counts[0])
 
     return m, c
 

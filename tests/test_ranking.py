@@ -26,7 +26,8 @@ class TestComputePrior:
         ]
         m, c = compute_prior(places)
         assert m == 4.0  # mean of 4.0, 3.0, 5.0
-        assert c == 100  # median of 100, 200, 50
+        # Q1 should be between the lowest and median review counts
+        assert 50 <= c <= 100
 
     def test_skips_unrated_places(self) -> None:
         places = [
@@ -155,3 +156,80 @@ class TestRankPlaces:
 
         ranked_ids = [r["place"].place_id for r in results]
         assert ranked_ids.index("high") < ranked_ids.index("low")
+
+    def test_credscore_spread_is_meaningful(self) -> None:
+        """Verify CredScores use the full range when there's real spread."""
+        places = [
+            _make_place(place_id="best", rating=4.8, user_rating_count=800),
+            _make_place(place_id="good", rating=4.5, user_rating_count=400),
+            _make_place(place_id="mid", rating=4.0, user_rating_count=200),
+            _make_place(place_id="low", rating=3.5, user_rating_count=100),
+            _make_place(place_id="worst", rating=3.0, user_rating_count=50),
+        ]
+        results = rank_places(places)
+
+        scores = [r["credscore"] for r in results]
+        assert max(scores) == 100.0
+        assert min(scores) == 0.0
+
+        # Verify ordering matches expectations
+        ranked_ids = [r["place"].place_id for r in results]
+        assert ranked_ids == ["best", "good", "mid", "low", "worst"]
+
+    def test_credscore_with_real_world_distribution(self) -> None:
+        """Simulate a typical Google Places result set and verify rankings feel right.
+
+        The Bayesian average formula has a mathematical property: when a place's
+        rating equals the prior mean, its Bayesian average is always the prior mean
+        regardless of review count. This means a 5.0-rated place with few reviews
+        can rank above a 4.5-rated place if 4.5 IS the prior mean. This is expected
+        behavior — C tuning and credibility thresholds are future iterations.
+        """
+        places = [
+            _make_place(
+                place_id="hidden_gem",
+                name="Hidden Gem",
+                rating=4.9,
+                user_rating_count=45,
+            ),
+            _make_place(
+                place_id="popular",
+                name="Popular Spot",
+                rating=4.5,
+                user_rating_count=1200,
+            ),
+            _make_place(
+                place_id="solid", name="Solid Choice", rating=4.6, user_rating_count=600
+            ),
+            _make_place(
+                place_id="new_hype", name="New Hype", rating=5.0, user_rating_count=8
+            ),
+            _make_place(
+                place_id="chain",
+                name="Chain Restaurant",
+                rating=4.2,
+                user_rating_count=3000,
+            ),
+            _make_place(
+                place_id="mediocre",
+                name="Mediocre Place",
+                rating=3.8,
+                user_rating_count=200,
+            ),
+        ]
+        results = rank_places(places)
+        ranked_ids = [r["place"].place_id for r in results]
+
+        # High rating + credible volume ranks first
+        assert ranked_ids[0] == "hidden_gem"
+
+        # Solid (4.6, 600) beats Popular (4.5, 1200) — rating wins when both have volume
+        assert ranked_ids.index("solid") < ranked_ids.index("popular")
+
+        # Below-average ratings sink regardless of volume
+        assert ranked_ids.index("chain") > ranked_ids.index("solid")
+        assert ranked_ids.index("mediocre") > ranked_ids.index("chain")
+
+        # New Hype (5.0, 8 reviews) IS penalized — pulled from 5.0 toward prior
+        new_hype = next(r for r in results if r["place"].place_id == "new_hype")
+        assert new_hype["bayesian_avg"] < 5.0

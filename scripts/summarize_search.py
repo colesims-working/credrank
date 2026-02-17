@@ -5,9 +5,12 @@ from credrank.models import PlaceSearchParams
 from credrank.ranking import rank_places
 from credrank.summarizer import summarize_top_n
 
-QUERY = "breakfast"
-LAT, LNG = 12.517, -69.978  # Aruba
-RADIUS_M = 10000
+QUERY = "dry needling"
+LAT, LNG = 37.603798, -77.260521  # Mechanicsville
+# LAT, LNG = 12.5463125, -70.0605124  # JOIA Aruba
+RADIUS_MI = 20
+RADIUS_M = RADIUS_MI * 1609
+# RADIUS_M = 1000
 MAX_RESULTS = 60
 SUMMARIZE_TOP = 5
 
