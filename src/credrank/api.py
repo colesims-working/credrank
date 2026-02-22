@@ -149,6 +149,18 @@ def recommend(req: PlaceIdRequest):
     return RecommendResponse(**result)
 
 
+@app.get("/api/config/maps-key")
+def maps_key():
+    """Expose the Maps API key for client-side geocoding.
+
+    In production, lock this down with HTTP referrer restrictions
+    in the Google Cloud Console.
+    """
+    from credrank.config import get_api_key
+
+    return {"key": get_api_key()}
+
+
 # --- Static files (frontend) ---
 
 app.mount("/static", StaticFiles(directory="frontend"), name="static")

@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>CredRank</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -13,6 +14,7 @@
             background: #0f1117;
             color: #e4e4e7;
             height: 100vh;
+            height: 100dvh;
             display: flex;
             flex-direction: column;
         }
@@ -69,10 +71,59 @@
         button:hover { background: #6366f1; }
         button:disabled { background: #3f3f46; cursor: not-allowed; color: #71717a; }
 
+        .location-bar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .location-bar input[type="text"] {
+            flex: 1;
+            min-width: 180px;
+        }
+
+        .locate-btn {
+            background: none;
+            border: 1px solid #2a2d3a;
+            color: #818cf8;
+            padding: 8px 12px;
+            font-size: 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .locate-btn:hover { background: #1e2040; }
+
+        .radius-select {
+            background: #1e2030;
+            border: 1px solid #2a2d3a;
+            color: #e4e4e7;
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .advanced-toggle {
+            font-size: 11px;
+            color: #6b7280;
+            cursor: pointer;
+            user-select: none;
+        }
+        .advanced-toggle:hover { color: #818cf8; }
+        .advanced-fields {
+            display: none;
+            gap: 8px;
+            align-items: center;
+        }
+        .advanced-fields.visible { display: flex; }
+        .advanced-fields input { width: 90px; }
+
         .content {
             display: flex;
             flex: 1;
             overflow: hidden;
+            position: relative;
         }
 
         .results-panel {
@@ -174,7 +225,7 @@
             font-size: 14px;
         }
 
-        /* Recommend modal */
+        /* Modal */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -216,6 +267,148 @@
             background: #2a2d3a;
             color: #e4e4e7;
         }
+
+        /* Mobile toggle bar */
+        .mobile-tabs {
+            display: none;
+            background: #161822;
+            border-top: 1px solid #2a2d3a;
+        }
+
+        .mobile-tabs button {
+            flex: 1;
+            background: none;
+            color: #71717a;
+            border: none;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 0;
+        }
+        .mobile-tabs button.active {
+            color: #818cf8;
+            border-top: 2px solid #818cf8;
+        }
+
+        /* --- Mobile Responsive --- */
+        @media (max-width: 768px) {
+            body {
+                padding-bottom: env(safe-area-inset-bottom, 0);
+            }
+
+            header {
+                padding: 10px 14px;
+                padding-top: max(10px, env(safe-area-inset-top, 0));
+                gap: 8px;
+            }
+
+            header h1 {
+                font-size: 18px;
+            }
+
+            .search-bar {
+                min-width: unset;
+                width: 100%;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+
+            .search-bar input[type="text"] {
+                width: 100%;
+                flex: unset;
+                font-size: 16px;
+                padding: 10px 12px;
+            }
+
+            .location-bar {
+                width: 100%;
+            }
+
+            .location-bar input[type="text"] {
+                font-size: 16px;
+                padding: 10px 12px;
+            }
+
+            .locate-btn {
+                padding: 10px 12px;
+            }
+
+            .search-bar button {
+                width: 100%;
+                padding: 12px;
+                font-size: 16px;
+            }
+
+            .advanced-toggle { display: none; }
+            .advanced-fields { display: none !important; }
+
+            .content {
+                flex-direction: column;
+            }
+
+            .results-panel {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #2a2d3a;
+            }
+
+            .content.show-list .results-panel {
+                flex: 1;
+                max-height: unset;
+                overflow-y: auto;
+            }
+            .content.show-list #map { display: none; }
+
+            .content.show-map .results-panel { display: none; }
+            .content.show-map #map {
+                flex: 1;
+                min-height: unset;
+            }
+
+            .mobile-tabs {
+                display: flex;
+                position: sticky;
+                bottom: 0;
+                z-index: 500;
+                padding-bottom: env(safe-area-inset-bottom, 0);
+            }
+
+            .status-bar { display: none; }
+
+            .result-card {
+                padding: 12px 14px;
+            }
+
+            .rank-badge {
+                min-width: 28px;
+                height: 28px;
+                font-size: 12px;
+            }
+
+            .place-name { font-size: 13px; }
+            .place-meta { font-size: 11px; gap: 6px; }
+
+            .summary-btn {
+                padding: 8px 14px;
+                font-size: 12px;
+            }
+
+            .modal {
+                max-width: 100%;
+                width: 100%;
+                height: 100%;
+                max-height: 100dvh;
+                border-radius: 0;
+                padding-bottom: calc(24px + env(safe-area-inset-bottom, 0));
+            }
+
+            .modal h2 { font-size: 16px; }
+
+            .modal .close-btn {
+                padding: 14px;
+                font-size: 16px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -223,18 +416,36 @@
         <h1>CredRank</h1>
         <div class="search-bar">
             <input type="text" id="query" placeholder="What are you looking for?" value="best pizza">
-            <input type="number" id="lat" placeholder="Latitude" value="37.603" step="0.001" style="width:100px">
-            <input type="number" id="lng" placeholder="Longitude" value="-77.261" step="0.001" style="width:100px">
-            <input type="number" id="radius" placeholder="Radius (m)" value="8000" step="500" style="width:90px">
+            <div class="location-bar">
+                <input type="text" id="locationInput" placeholder="City, address, or neighborhood">
+                <button class="locate-btn" onclick="useMyLocation()">📍 Near me</button>
+                <select class="radius-select" id="radiusSelect">
+                    <option value="1609">1 mi</option>
+                    <option value="4828">3 mi</option>
+                    <option value="8047" selected>5 mi</option>
+                    <option value="16093">10 mi</option>
+                    <option value="32187">20 mi</option>
+                </select>
+            </div>
+            <span class="advanced-toggle" onclick="toggleAdvanced()">▸ Coordinates</span>
+            <div class="advanced-fields" id="advancedFields">
+                <input type="number" id="lat" placeholder="Lat" step="0.001" style="width:90px">
+                <input type="number" id="lng" placeholder="Lng" step="0.001" style="width:90px">
+            </div>
             <button id="searchBtn" onclick="doSearch()">Search</button>
         </div>
     </header>
 
-    <div class="content">
+    <div class="content show-list" id="contentArea">
         <div class="results-panel" id="resultsPanel">
             <div class="loading">Search for something to get started</div>
         </div>
         <div id="map"></div>
+    </div>
+
+    <div class="mobile-tabs" id="mobileTabs">
+        <button class="active" onclick="showView('list')">List</button>
+        <button onclick="showView('map')">Map</button>
     </div>
 
     <div class="status-bar" id="statusBar">Ready</div>
@@ -253,45 +464,125 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // --- Map Setup ---
-        const map = L.map('map').setView([37.603, -77.261], 12);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OSM &amp; CARTO',
-            maxZoom: 19
-        }).addTo(map);
-
+        // --- State ---
+        let currentLat = null;
+        let currentLng = null;
         let placeMarkers = [];
-        let searchRect = null;
         let searchCircle = null;
         let centerMarker = null;
         let radiusHandle = null;
         let currentResults = [];
 
-        // --- Boundary math (mirrors Python _circle_to_bounding_box) ---
-        function circleToBounds(lat, lng, radiusM) {
-            const dLat = radiusM / 111320;
-            const dLng = radiusM / (111320 * Math.cos(lat * Math.PI / 180));
-            return [
-                [lat - dLat, lng - dLng],  // southwest
-                [lat + dLat, lng + dLng],  // northeast
-            ];
+        // --- Map Setup ---
+        const map = L.map('map').setView([37.54, -77.43], 12);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OSM &amp; CARTO',
+            maxZoom: 19
+        }).addTo(map);
+
+        // --- Geocoding ---
+        async function geocodeLocation(text) {
+            const key = await fetch('/api/config/maps-key').then(r => r.json()).then(d => d.key).catch(() => null);
+            if (!key) {
+                setStatus('Geocoding unavailable');
+                return null;
+            }
+
+            const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(text)}&key=${key}`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+
+            if (data.results && data.results.length > 0) {
+                const loc = data.results[0].geometry.location;
+                return { lat: loc.lat, lng: loc.lng, name: data.results[0].formatted_address };
+            }
+            return null;
         }
 
-        // --- Draw interactive search boundary ---
-        function drawSearchBoundary() {
-            const lat = parseFloat(document.getElementById('lat').value);
-            const lng = parseFloat(document.getElementById('lng').value);
-            const radius = parseInt(document.getElementById('radius').value);
+        // --- Use My Location ---
+        function useMyLocation() {
+            if (!navigator.geolocation) {
+                setStatus('Geolocation not supported by this browser');
+                return;
+            }
 
-            // Clear previous boundary elements
-            if (searchRect) map.removeLayer(searchRect);
+            const btn = document.querySelector('.locate-btn');
+            btn.textContent = '⏳ Locating...';
+
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    currentLat = pos.coords.latitude;
+                    currentLng = pos.coords.longitude;
+                    document.getElementById('lat').value = currentLat.toFixed(4);
+                    document.getElementById('lng').value = currentLng.toFixed(4);
+                    document.getElementById('locationInput').value = `${currentLat.toFixed(3)}, ${currentLng.toFixed(3)}`;
+                    map.setView([currentLat, currentLng], 13);
+                    drawSearchBoundary();
+                    btn.textContent = '📍 Near me';
+                    setStatus('Using your location');
+                },
+                (err) => {
+                    btn.textContent = '📍 Near me';
+                    if (err.code === 1) {
+                        setStatus('Location access denied — try entering a city name instead');
+                    } else if (err.code === 3) {
+                        setStatus('Location timed out — try entering a city name instead');
+                    } else {
+                        setStatus('Location requires HTTPS — enter a city name or use desktop');
+                    }
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+
+        // --- Resolve location before search ---
+        async function resolveLocation() {
+            const locInput = document.getElementById('locationInput').value.trim();
+            const latInput = document.getElementById('lat').value;
+            const lngInput = document.getElementById('lng').value;
+
+            if (latInput && lngInput) {
+                currentLat = parseFloat(latInput);
+                currentLng = parseFloat(lngInput);
+                return true;
+            }
+
+            if (locInput) {
+                setStatus('Finding location...');
+                const result = await geocodeLocation(locInput);
+                if (result) {
+                    currentLat = result.lat;
+                    currentLng = result.lng;
+                    document.getElementById('lat').value = result.lat.toFixed(4);
+                    document.getElementById('lng').value = result.lng.toFixed(4);
+                    document.getElementById('locationInput').value = result.name;
+                    return true;
+                } else {
+                    setStatus('Location not found — try a different search');
+                    return false;
+                }
+            }
+
+            setStatus('Enter a location or tap 📍 Near me');
+            return false;
+        }
+
+        // --- Boundary drawing (circle only — rectangle is hidden backend detail) ---
+        function getRadius() {
+            return parseInt(document.getElementById('radiusSelect').value);
+        }
+
+        function drawSearchBoundary() {
+            if (!currentLat || !currentLng) return;
+            const radius = getRadius();
+
             if (searchCircle) map.removeLayer(searchCircle);
             if (centerMarker) map.removeLayer(centerMarker);
             if (radiusHandle) map.removeLayer(radiusHandle);
 
-            // Rectangle (actual API search boundary)
-            const bounds = circleToBounds(lat, lng, radius);
-            searchRect = L.rectangle(bounds, {
+            // Clean circle boundary
+            searchCircle = L.circle([currentLat, currentLng], {
+                radius: radius,
                 color: '#818cf8',
                 fillColor: '#818cf8',
                 fillOpacity: 0.04,
@@ -299,17 +590,8 @@
                 dashArray: '8 4',
             }).addTo(map);
 
-            // Circle overlay (what user conceptually asked for)
-            searchCircle = L.circle([lat, lng], {
-                radius: radius,
-                color: '#818cf8',
-                fillOpacity: 0,
-                weight: 1,
-                opacity: 0.3,
-            }).addTo(map);
-
-            // Draggable center marker
-            centerMarker = L.marker([lat, lng], {
+            // Draggable center
+            centerMarker = L.marker([currentLat, currentLng], {
                 draggable: true,
                 icon: L.divIcon({
                     className: '',
@@ -323,16 +605,17 @@
 
             centerMarker.on('dragend', function(e) {
                 const pos = e.target.getLatLng();
+                currentLat = pos.lat;
+                currentLng = pos.lng;
                 document.getElementById('lat').value = pos.lat.toFixed(4);
                 document.getElementById('lng').value = pos.lng.toFixed(4);
+                document.getElementById('locationInput').value = `${pos.lat.toFixed(3)}, ${pos.lng.toFixed(3)}`;
                 drawSearchBoundary();
             });
 
-            // Draggable radius handle (east edge of circle)
-            const handleLat = lat;
-            const handleLng = lng + radius / (111320 * Math.cos(lat * Math.PI / 180));
-
-            radiusHandle = L.marker([handleLat, handleLng], {
+            // Draggable radius handle
+            const handleLng = currentLng + radius / (111320 * Math.cos(currentLat * Math.PI / 180));
+            radiusHandle = L.marker([currentLat, handleLng], {
                 draggable: true,
                 icon: L.divIcon({
                     className: '',
@@ -348,61 +631,79 @@
                 const center = centerMarker.getLatLng();
                 const handle = e.target.getLatLng();
                 const newRadius = Math.round(center.distanceTo(handle));
-                document.getElementById('radius').value = newRadius;
 
-                // Live update the visual boundary
-                if (searchRect) map.removeLayer(searchRect);
+                // Snap to nearest option
+                const options = [1609, 4828, 8047, 16093, 32187];
+                const closest = options.reduce((a, b) => Math.abs(b - newRadius) < Math.abs(a - newRadius) ? b : a);
+                document.getElementById('radiusSelect').value = closest;
+
                 if (searchCircle) map.removeLayer(searchCircle);
-
-                const newBounds = circleToBounds(center.lat, center.lng, newRadius);
-                searchRect = L.rectangle(newBounds, {
+                searchCircle = L.circle([center.lat, center.lng], {
+                    radius: newRadius,
                     color: '#818cf8',
                     fillColor: '#818cf8',
                     fillOpacity: 0.04,
                     weight: 2,
                     dashArray: '8 4',
                 }).addTo(map);
-
-                searchCircle = L.circle([center.lat, center.lng], {
-                    radius: newRadius,
-                    color: '#818cf8',
-                    fillOpacity: 0,
-                    weight: 1,
-                    opacity: 0.3,
-                }).addTo(map);
             });
         }
 
-        // Draw initial boundary on load
-        drawSearchBoundary();
+        document.getElementById('radiusSelect').addEventListener('change', drawSearchBoundary);
 
-        // Redraw when inputs change manually
-        ['lat', 'lng', 'radius'].forEach(id => {
-            document.getElementById(id).addEventListener('change', drawSearchBoundary);
-        });
+        // --- Mobile view toggle ---
+        function showView(view) {
+            const content = document.getElementById('contentArea');
+            const tabs = document.getElementById('mobileTabs').querySelectorAll('button');
+
+            content.classList.remove('show-list', 'show-map');
+            content.classList.add('show-' + view);
+
+            tabs.forEach(t => t.classList.remove('active'));
+            tabs[view === 'list' ? 0 : 1].classList.add('active');
+
+            if (view === 'map') {
+                setTimeout(() => map.invalidateSize(), 100);
+            }
+        }
 
         // --- Search ---
         async function doSearch() {
             const query = document.getElementById('query').value;
-            const lat = parseFloat(document.getElementById('lat').value);
-            const lng = parseFloat(document.getElementById('lng').value);
-            const radius = parseInt(document.getElementById('radius').value);
             const btn = document.getElementById('searchBtn');
+
+            if (!query.trim()) {
+                setStatus('Enter a search query');
+                return;
+            }
 
             btn.disabled = true;
             btn.textContent = 'Searching...';
+
+            const hasLocation = await resolveLocation();
+            if (!hasLocation) {
+                btn.disabled = false;
+                btn.textContent = 'Search';
+                return;
+            }
+
+            const radius = getRadius();
             setStatus('Searching and ranking...');
 
             try {
                 const resp = await fetch('/api/search', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ query, lat, lng, radius_m: radius, max_results: 20 })
+                    body: JSON.stringify({ query, lat: currentLat, lng: currentLng, radius_m: radius, max_results: 20 })
                 });
                 const data = await resp.json();
                 currentResults = data.places;
                 renderResults(data);
                 renderPlaceMarkers(data.places);
+                drawSearchBoundary();
+
+                map.setView([currentLat, currentLng], radius > 20000 ? 10 : radius > 10000 ? 11 : radius > 5000 ? 12 : 13);
+
                 setStatus(`Found ${data.result_count} results for "${data.query}"`);
             } catch (e) {
                 setStatus('Error: ' + e.message);
@@ -412,7 +713,7 @@
             }
         }
 
-        // --- Render Results Panel ---
+        // --- Render Results ---
         function renderResults(data) {
             const panel = document.getElementById('resultsPanel');
 
@@ -444,14 +745,13 @@
             `).join('');
         }
 
-        // --- Render place markers (separate from boundary) ---
+        // --- Map Markers ---
         function renderPlaceMarkers(places) {
-            // Clear previous place markers only
             placeMarkers.forEach(m => map.removeLayer(m));
             placeMarkers = [];
 
             places.forEach(p => {
-                if (!p.lat || !p.lng) return;
+                if (p.lat == null || p.lng == null) return;
 
                 const marker = L.circleMarker([p.lat, p.lng], {
                     radius: Math.max(6, 14 - p.rank * 0.5),
@@ -483,10 +783,12 @@
             return '#f87171';
         }
 
-        // --- Focus on a place ---
+        // --- Focus Place ---
         function focusPlace(rank) {
             document.querySelectorAll('.result-card').forEach(c => c.classList.remove('active'));
             document.getElementById('card-' + rank).classList.add('active');
+
+            if (window.innerWidth <= 768) showView('map');
 
             const marker = placeMarkers.find(m => m.placeRank === rank);
             if (marker) {
@@ -495,7 +797,7 @@
             }
         }
 
-        // --- Load summary for a place ---
+        // --- Summarize ---
         async function loadSummary(rank) {
             const btn = document.getElementById('summaryBtn-' + rank);
             const el = document.getElementById('summary-' + rank);
@@ -521,7 +823,7 @@
             }
         }
 
-        // --- Recommend modal ---
+        // --- Recommend ---
         async function loadRecommend(rank) {
             const place = currentResults.find(p => p.rank === rank);
             if (!place) return;
@@ -577,14 +879,24 @@
             if (e.target === this) closeModal();
         });
 
-        // --- Status bar ---
+        // --- Advanced toggle ---
+        function toggleAdvanced() {
+            const el = document.getElementById('advancedFields');
+            const toggle = document.querySelector('.advanced-toggle');
+            el.classList.toggle('visible');
+            toggle.textContent = el.classList.contains('visible') ? '▾ Coordinates' : '▸ Coordinates';
+        }
+
+        // --- Status ---
         function setStatus(msg) {
             document.getElementById('statusBar').textContent = msg;
         }
 
-        // --- Enter key to search ---
-        document.getElementById('query').addEventListener('keydown', e => {
-            if (e.key === 'Enter') doSearch();
+        // --- Enter key ---
+        document.querySelectorAll('#query, #locationInput').forEach(el => {
+            el.addEventListener('keydown', e => {
+                if (e.key === 'Enter') doSearch();
+            });
         });
     </script>
 </body>
