@@ -1,10 +1,14 @@
 """Thin wrapper around the Google Gemini API."""
 
+import logging
+import time
+
 from google import genai
 
 from credrank.config import get_gemini_key
 
 _client: genai.Client | None = None
+log = logging.getLogger(__name__)
 
 
 def get_client() -> genai.Client:
@@ -31,6 +35,7 @@ def complete(
             Disable for straightforward extraction/summarization tasks.
     """
     client = get_client()
+    started_at = time.perf_counter()
 
     config = genai.types.GenerateContentConfig(
         max_output_tokens=max_tokens,
@@ -42,10 +47,36 @@ def complete(
     if system:
         config.system_instruction = system
 
-    response = client.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=prompt,
-        config=config,
-    )
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt,
+            config=config,
+        )
+    except TimeoutError:
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        log.warning(
+            "llm.complete.timeout duration_ms=%d prompt_chars=%d",
+            duration_ms,
+            len(prompt),
+        )
+        return ""
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        log.warning(
+            "llm.complete.error duration_ms=%d prompt_chars=%d error=%s",
+            duration_ms,
+            len(prompt),
+            exc,
+        )
+        raise
 
-    return response.text
+    text = response.text or ""
+    duration_ms = int((time.perf_counter() - started_at) * 1000)
+    log.info(
+        "llm.complete.done duration_ms=%d prompt_chars=%d output_chars=%d",
+        duration_ms,
+        len(prompt),
+        len(text),
+    )
+    return text

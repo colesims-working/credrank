@@ -3,901 +3,673 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>CredRank</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+    <meta name="description" content="CredRank: Honest restaurant rankings powered by Bayesian statistics. Find the best food near you with transparent, math-based scores.">
+    <meta name="theme-color" content="#0b0d11">
+    <title>CredRank — Honest Restaurant Rankings</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◆</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
+        :root {
+            --bg-primary: #0b0d11;
+            --bg-secondary: #12141a;
+            --bg-card: #161820;
+            --bg-card-hover: #1a1d27;
+            --bg-elevated: #1e2130;
+            --border: #222536;
+            --border-subtle: #1a1d28;
+            --text-primary: #e8e8ed;
+            --text-secondary: #8e90a0;
+            --text-tertiary: #5c5e6e;
+            --score-great: #2b9f5e;
+            --score-good: #4a8fe7;
+            --score-ok: #d4a020;
+            --score-mid: #d47020;
+            --score-low: #c43e3e;
+            --accent: #c9a84c;
+            --accent-dim: rgba(201, 168, 76, 0.12);
+            --radius: 8px;
+            --radius-lg: 12px;
+            --font-display: 'Instrument Serif', Georgia, serif;
+            --font-body: 'DM Sans', -apple-system, sans-serif;
+        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            background: #0f1117;
-            color: #e4e4e7;
-            height: 100vh;
-            height: 100dvh;
-            display: flex;
-            flex-direction: column;
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh; height: 100dvh;
+            display: flex; flex-direction: column;
+            -webkit-font-smoothing: antialiased;
         }
-
-        header {
-            padding: 16px 24px;
-            background: #161822;
-            border-bottom: 1px solid #2a2d3a;
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
+        .skip-link {
+            position: absolute; top: -100px; left: 16px;
+            background: var(--accent); color: var(--bg-primary);
+            padding: 8px 16px; border-radius: var(--radius);
+            font-weight: 600; z-index: 9999; text-decoration: none;
         }
+        .skip-link:focus { top: 8px; }
 
-        header h1 {
-            font-size: 20px;
-            font-weight: 700;
-            color: #818cf8;
-            margin-right: 8px;
+        /* ═══ HEADER ═══ */
+        header { padding: 14px 24px; background: var(--bg-secondary); border-bottom: 1px solid var(--border); z-index: 100; }
+        .header-inner { display: flex; align-items: center; gap: 20px; max-width: 1800px; margin: 0 auto; }
+        .brand { display: flex; align-items: baseline; gap: 6px; text-decoration: none; flex-shrink: 0; }
+        .brand-mark { font-family: var(--font-display); font-size: 24px; color: var(--accent); letter-spacing: -0.5px; }
+        .brand-tag { font-size: 10px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-tertiary); display: none; }
+
+        /* ═══ SEARCH BAR ═══ */
+        .search-form {
+            display: flex; align-items: center; flex: 1;
+            background: var(--bg-primary); border: 1px solid var(--border);
+            border-radius: 100px; padding: 4px 4px 4px 20px;
+            transition: border-color 0.2s;
         }
-
-        .search-bar {
-            display: flex;
-            gap: 8px;
-            flex: 1;
-            min-width: 300px;
+        .search-form:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+        .search-form input {
+            background: transparent; border: none; color: var(--text-primary);
+            font-family: var(--font-body); font-size: 14px; outline: none; padding: 8px 0;
         }
-
-        input, select {
-            background: #1e2030;
-            border: 1px solid #2a2d3a;
-            color: #e4e4e7;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-
-        input:focus { outline: none; border-color: #818cf8; }
-        input::placeholder { color: #6b7280; }
-
-        .search-bar input[type="text"] { flex: 1; }
-
-        button {
-            background: #818cf8;
-            color: #0f1117;
-            border: none;
-            padding: 8px 20px;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        button:hover { background: #6366f1; }
-        button:disabled { background: #3f3f46; cursor: not-allowed; color: #71717a; }
-
-        .location-bar {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .location-bar input[type="text"] {
-            flex: 1;
-            min-width: 180px;
-        }
-
+        .search-form input::placeholder { color: var(--text-tertiary); }
+        .search-query { flex: 1; min-width: 100px; }
+        .search-divider { width: 1px; height: 20px; background: var(--border); margin: 0 12px; flex-shrink: 0; }
+        .search-location { flex: 0.8; min-width: 80px; }
+        .search-radius { width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+        .search-radius-label { font-size: 12px; color: var(--text-tertiary); margin-right: 10px; white-space: nowrap; }
         .locate-btn {
-            background: none;
-            border: 1px solid #2a2d3a;
-            color: #818cf8;
-            padding: 8px 12px;
-            font-size: 14px;
-            border-radius: 6px;
-            cursor: pointer;
-            white-space: nowrap;
+            background: transparent; border: none; color: var(--text-secondary);
+            font-size: 16px; cursor: pointer; padding: 6px 8px; border-radius: 50%;
+            transition: all 0.15s; flex-shrink: 0; line-height: 1;
         }
-        .locate-btn:hover { background: #1e2040; }
+        .locate-btn:hover { color: var(--accent); background: var(--accent-dim); }
+        .locate-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .search-go {
+            background: var(--accent); color: var(--bg-primary); border: none;
+            padding: 8px 20px; border-radius: 100px; font-family: var(--font-body);
+            font-size: 13px; font-weight: 600; cursor: pointer;
+            transition: all 0.2s; flex-shrink: 0; letter-spacing: 0.3px;
+        }
+        .search-go:hover { background: #d9b85c; transform: scale(1.02); }
+        .search-go:active { transform: scale(0.98); }
+        .search-go:disabled { background: var(--bg-elevated); color: var(--text-tertiary); cursor: not-allowed; transform: none; }
+        .search-go:focus-visible { outline: 2px solid white; outline-offset: 2px; }
 
-        .radius-select {
-            background: #1e2030;
-            border: 1px solid #2a2d3a;
-            color: #e4e4e7;
-            padding: 8px 10px;
-            border-radius: 6px;
-            font-size: 14px;
-        }
+        /* ═══ CONTENT ═══ */
+        .content { display: flex; flex: 1; overflow: hidden; }
 
-        .advanced-toggle {
-            font-size: 11px;
-            color: #6b7280;
-            cursor: pointer;
-            user-select: none;
+        /* ═══ RESULTS ═══ */
+        .results-panel { width: 420px; overflow-y: auto; background: var(--bg-primary); flex-shrink: 0; }
+        .results-panel::-webkit-scrollbar { width: 6px; }
+        .results-panel::-webkit-scrollbar-track { background: transparent; }
+        .results-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        .results-header {
+            padding: 14px 20px 10px; border-bottom: 1px solid var(--border-subtle);
+            position: sticky; top: 0; background: var(--bg-primary); z-index: 10;
+            display: flex; justify-content: space-between; align-items: baseline;
         }
-        .advanced-toggle:hover { color: #818cf8; }
-        .advanced-fields {
-            display: none;
-            gap: 8px;
-            align-items: center;
-        }
-        .advanced-fields.visible { display: flex; }
-        .advanced-fields input { width: 90px; }
-
-        .content {
-            display: flex;
-            flex: 1;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .results-panel {
-            width: 440px;
-            overflow-y: auto;
-            border-right: 1px solid #2a2d3a;
-            padding: 0;
-        }
+        .results-count { font-size: 11px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; color: var(--text-tertiary); }
+        .results-count strong { color: var(--accent); font-weight: 600; }
+        .results-meta { font-size: 10px; color: var(--text-tertiary); }
 
         .result-card {
-            padding: 14px 18px;
-            border-bottom: 1px solid #1e2030;
-            cursor: pointer;
-            transition: background 0.15s;
-            display: flex;
-            gap: 14px;
-            align-items: flex-start;
+            display: flex; gap: 14px; padding: 14px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            cursor: pointer; transition: all 0.15s;
+            animation: cardSlideIn 0.35s ease-out both;
         }
-        .result-card:hover { background: #1a1c2e; }
-        .result-card.active { background: #1e2040; border-left: 3px solid #818cf8; }
+        .result-card:hover { background: var(--bg-card-hover); }
+        .result-card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+        .result-card.active { background: var(--bg-card); box-shadow: inset 3px 0 0 var(--accent); }
+        @keyframes cardSlideIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
 
-        .rank-badge {
-            background: #818cf8;
-            color: #0f1117;
-            font-weight: 700;
-            font-size: 13px;
-            min-width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
+        .score-col { display: flex; flex-direction: column; align-items: center; gap: 1px; flex-shrink: 0; min-width: 48px; }
+        .credscore { font-family: var(--font-display); font-size: 28px; line-height: 1; font-style: italic; }
+        .score-indicator { font-size: 10px; line-height: 1; }
+        .credscore-label { font-size: 8px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-tertiary); }
+        .rank-num { font-size: 10px; font-weight: 600; color: var(--text-tertiary); margin-top: 1px; }
         .place-info { flex: 1; min-width: 0; }
-        .place-name {
-            font-weight: 600;
-            font-size: 14px;
-            margin-bottom: 3px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        .place-name { font-weight: 600; font-size: 14px; line-height: 1.3; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .place-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+        .google-stars { color: #facc15; letter-spacing: -1px; }
+        .place-address { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .place-summary { font-size: 12px; color: var(--text-secondary); margin-top: 6px; font-style: italic; line-height: 1.45; }
+        .card-actions { display: flex; gap: 6px; margin-top: 8px; }
+        .action-btn {
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-secondary); padding: 5px 10px;
+            font-family: var(--font-body); font-size: 11px; font-weight: 500;
+            border-radius: 100px; cursor: pointer; transition: all 0.15s;
         }
-        .place-meta {
-            font-size: 12px;
-            color: #a1a1aa;
-            display: flex;
-            gap: 10px;
-            margin-bottom: 4px;
-        }
-        .place-meta .score { color: #818cf8; font-weight: 600; }
-        .place-meta .rating { color: #facc15; }
-        .place-address {
-            font-size: 11px;
-            color: #71717a;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .place-summary {
-            font-size: 12px;
-            color: #a1a1aa;
-            margin-top: 6px;
-            font-style: italic;
-            line-height: 1.4;
-        }
+        .action-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+        .action-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .action-btn:disabled { color: var(--text-tertiary); border-color: var(--border-subtle); cursor: wait; }
 
-        .summary-btn {
-            background: none;
-            border: 1px solid #2a2d3a;
-            color: #818cf8;
-            padding: 3px 8px;
-            font-size: 11px;
-            border-radius: 4px;
-            margin-top: 6px;
-            cursor: pointer;
-            font-weight: 500;
-        }
-        .summary-btn:hover { background: #1e2040; }
-        .summary-btn:disabled { color: #3f3f46; border-color: #1e2030; }
+        /* ═══ MAP ═══ */
+        #map { flex: 1; background: var(--bg-primary); }
+        .leaflet-popup-content-wrapper { background: var(--bg-card) !important; color: var(--text-primary) !important; border: 1px solid var(--border) !important; border-radius: var(--radius-lg) !important; box-shadow: 0 12px 40px rgba(0,0,0,0.5) !important; }
+        .leaflet-popup-tip { background: var(--bg-card) !important; border: 1px solid var(--border) !important; }
+        .leaflet-popup-close-button { color: var(--text-tertiary) !important; }
+        .radius-tooltip { background: var(--bg-card); border: 1px solid var(--accent); color: var(--accent); font-family: var(--font-body); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 100px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 
-        #map { flex: 1; }
+        /* ═══ EMPTY / LOADING ═══ */
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 40px 32px; text-align: center; }
+        .empty-state-icon { font-family: var(--font-display); font-size: 48px; color: var(--accent); margin-bottom: 16px; font-style: italic; }
+        .empty-state-title { font-family: var(--font-display); font-size: 22px; font-style: italic; color: var(--text-primary); margin-bottom: 8px; }
+        .empty-state-text { font-size: 13px; color: var(--text-tertiary); max-width: 260px; line-height: 1.55; }
+        .empty-state-steps { margin-top: 24px; text-align: left; font-size: 13px; color: var(--text-secondary); line-height: 2; }
+        .empty-state-steps .step-num { color: var(--accent); font-weight: 600; margin-right: 6px; }
+        .loading-indicator { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; }
+        .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { font-size: 13px; color: var(--text-tertiary); }
 
-        .status-bar {
-            padding: 8px 18px;
-            background: #161822;
-            border-top: 1px solid #2a2d3a;
-            font-size: 12px;
-            color: #71717a;
-        }
-
-        .loading {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: #71717a;
-            font-size: 14px;
-        }
-
-        /* Modal */
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
+        /* ═══ MODAL ═══ */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center; }
         .modal-overlay.visible { display: flex; }
+        .modal { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; max-width: 480px; width: 90%; max-height: 80vh; overflow-y: auto; animation: modalIn 0.25s ease-out; }
+        @keyframes modalIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+        .modal h2 { font-family: var(--font-display); font-size: 22px; color: var(--text-primary); font-style: italic; }
+        .modal .subtitle { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+        .modal-close { background: transparent; border: none; color: var(--text-tertiary); font-size: 20px; cursor: pointer; padding: 4px 8px; line-height: 1; border-radius: var(--radius); }
+        .modal-close:hover { color: var(--text-primary); background: var(--bg-elevated); }
+        .modal-close:focus-visible { outline: 2px solid var(--accent); }
+        .modal p { font-size: 13px; line-height: 1.6; color: var(--text-secondary); margin-bottom: 16px; }
+        .rec-item { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+        .rec-item:last-child { border: none; }
+        .rec-name { font-weight: 600; color: var(--text-primary); font-size: 14px; }
+        .rec-mentions { font-size: 11px; color: var(--accent); font-weight: 600; }
+        .rec-why { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+        .avoid-section { margin-top: 20px; }
+        .avoid-label { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--score-low); margin-bottom: 8px; }
+        .avoid-item { font-size: 12px; color: var(--text-secondary); padding: 4px 0; }
 
-        .modal {
-            background: #161822;
-            border: 1px solid #2a2d3a;
-            border-radius: 12px;
-            padding: 24px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
+        /* ═══ PRO BAR (bottom, above mobile tabs) ═══ */
+        .pro-bar {
+            display: flex; align-items: center; justify-content: center; gap: 16px;
+            padding: 6px 20px; background: var(--bg-secondary);
+            border-top: 1px solid var(--border-subtle); font-size: 11px;
         }
-        .modal h2 { font-size: 18px; color: #818cf8; margin-bottom: 4px; }
-        .modal .subtitle { font-size: 13px; color: #71717a; margin-bottom: 16px; }
-        .modal p { font-size: 14px; line-height: 1.6; margin-bottom: 12px; }
-        .modal .rec-item {
-            padding: 8px 0;
-            border-bottom: 1px solid #1e2030;
-        }
-        .modal .rec-item:last-child { border: none; }
-        .modal .rec-name { font-weight: 600; color: #e4e4e7; }
-        .modal .rec-why { font-size: 13px; color: #a1a1aa; }
-        .modal .rec-mentions { font-size: 11px; color: #818cf8; }
-        .modal .avoid-section { margin-top: 16px; }
-        .modal .avoid-label { color: #f87171; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
-        .modal .avoid-item { font-size: 13px; color: #a1a1aa; padding: 4px 0; }
-        .modal .close-btn {
-            margin-top: 16px;
-            width: 100%;
-            background: #2a2d3a;
-            color: #e4e4e7;
-        }
+        .pro-bar label { display: flex; align-items: center; gap: 5px; color: var(--text-tertiary); cursor: pointer; }
+        .pro-bar label:hover { color: var(--text-secondary); }
+        .pro-bar input[type="checkbox"] { accent-color: var(--accent); width: 13px; height: 13px; cursor: pointer; }
+        .pro-bar .pro-badge { font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--accent); background: var(--accent-dim); padding: 1px 5px; border-radius: 3px; }
 
-        /* Mobile toggle bar */
-        .mobile-tabs {
-            display: none;
-            background: #161822;
-            border-top: 1px solid #2a2d3a;
-        }
+        /* ═══ STATUS BAR ═══ */
+        .status-bar { padding: 6px 24px; background: var(--bg-secondary); border-top: 1px solid var(--border-subtle); font-size: 11px; color: var(--text-tertiary); display: flex; justify-content: space-between; }
 
-        .mobile-tabs button {
-            flex: 1;
-            background: none;
-            color: #71717a;
-            border: none;
-            padding: 12px;
-            font-size: 14px;
-            font-weight: 600;
-            border-radius: 0;
-        }
-        .mobile-tabs button.active {
-            color: #818cf8;
-            border-top: 2px solid #818cf8;
-        }
+        /* ═══ MOBILE TABS ═══ */
+        .mobile-tabs { display: none; background: var(--bg-secondary); border-top: 1px solid var(--border); }
+        .mobile-tabs button { flex: 1; background: none; border: none; color: var(--text-tertiary); font-family: var(--font-body); font-size: 13px; font-weight: 600; padding: 10px; cursor: pointer; border-top: 2px solid transparent; }
+        .mobile-tabs button.active { color: var(--accent); border-top-color: var(--accent); }
+        .mobile-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-        /* --- Mobile Responsive --- */
+        /* ═══ MOBILE ═══ */
         @media (max-width: 768px) {
-            body {
-                padding-bottom: env(safe-area-inset-bottom, 0);
-            }
-
-            header {
-                padding: 10px 14px;
-                padding-top: max(10px, env(safe-area-inset-top, 0));
-                gap: 8px;
-            }
-
-            header h1 {
-                font-size: 18px;
-            }
-
-            .search-bar {
-                min-width: unset;
-                width: 100%;
-                flex-wrap: wrap;
-                gap: 6px;
-            }
-
-            .search-bar input[type="text"] {
-                width: 100%;
-                flex: unset;
-                font-size: 16px;
-                padding: 10px 12px;
-            }
-
-            .location-bar {
-                width: 100%;
-            }
-
-            .location-bar input[type="text"] {
-                font-size: 16px;
-                padding: 10px 12px;
-            }
-
-            .locate-btn {
-                padding: 10px 12px;
-            }
-
-            .search-bar button {
-                width: 100%;
-                padding: 12px;
-                font-size: 16px;
-            }
-
-            .advanced-toggle { display: none; }
-            .advanced-fields { display: none !important; }
-
-            .content {
-                flex-direction: column;
-            }
-
-            .results-panel {
-                width: 100%;
-                border-right: none;
-                border-bottom: 1px solid #2a2d3a;
-            }
-
-            .content.show-list .results-panel {
-                flex: 1;
-                max-height: unset;
-                overflow-y: auto;
-            }
+            body { padding-bottom: env(safe-area-inset-bottom, 0); }
+            header { padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top, 0)); }
+            .header-inner { gap: 10px; }
+            .brand-mark { font-size: 20px; }
+            .search-form { padding: 4px 4px 4px 14px; flex-wrap: wrap; border-radius: 16px; }
+            .search-form input { font-size: 16px; padding: 8px 0; }
+            .search-query { flex: 1 1 100%; min-width: 0; }
+            .search-divider:first-of-type { display: none; }
+            .search-location { flex: 1; min-width: 60px; }
+            .search-divider:nth-of-type(2), .search-divider:nth-of-type(3), .search-radius, .search-radius-label { display: none; }
+            .search-go { padding: 10px 16px; }
+            .content { flex-direction: column; }
+            .results-panel { width: 100%; }
+            .content.show-list .results-panel { flex: 1; }
             .content.show-list #map { display: none; }
-
             .content.show-map .results-panel { display: none; }
-            .content.show-map #map {
-                flex: 1;
-                min-height: unset;
-            }
-
-            .mobile-tabs {
-                display: flex;
-                position: sticky;
-                bottom: 0;
-                z-index: 500;
-                padding-bottom: env(safe-area-inset-bottom, 0);
-            }
-
+            .content.show-map #map { flex: 1; }
+            .mobile-tabs { display: flex; position: sticky; bottom: 0; z-index: 500; padding-bottom: env(safe-area-inset-bottom, 0); }
             .status-bar { display: none; }
-
-            .result-card {
-                padding: 12px 14px;
-            }
-
-            .rank-badge {
-                min-width: 28px;
-                height: 28px;
-                font-size: 12px;
-            }
-
-            .place-name { font-size: 13px; }
-            .place-meta { font-size: 11px; gap: 6px; }
-
-            .summary-btn {
-                padding: 8px 14px;
-                font-size: 12px;
-            }
-
-            .modal {
-                max-width: 100%;
-                width: 100%;
-                height: 100%;
-                max-height: 100dvh;
-                border-radius: 0;
-                padding-bottom: calc(24px + env(safe-area-inset-bottom, 0));
-            }
-
-            .modal h2 { font-size: 16px; }
-
-            .modal .close-btn {
-                padding: 14px;
-                font-size: 16px;
-            }
+            .result-card { padding: 12px 14px; }
+            .modal { max-width: 100%; width: 100%; height: 100%; max-height: 100dvh; border-radius: 0; padding-bottom: calc(28px + env(safe-area-inset-bottom, 0)); }
+            .pro-bar { padding: 5px 12px; gap: 12px; }
         }
+        @media (min-width: 769px) { .brand-tag { display: block; } }
+        @media (min-width: 1200px) { .results-panel { width: 480px; } }
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
     </style>
 </head>
 <body>
-    <header>
-        <h1>CredRank</h1>
-        <div class="search-bar">
-            <input type="text" id="query" placeholder="What are you looking for?" value="best pizza">
-            <div class="location-bar">
-                <input type="text" id="locationInput" placeholder="City, address, or neighborhood">
-                <button class="locate-btn" onclick="useMyLocation()">📍 Near me</button>
-                <select class="radius-select" id="radiusSelect">
-                    <option value="1609">1 mi</option>
-                    <option value="4828">3 mi</option>
-                    <option value="8047" selected>5 mi</option>
-                    <option value="16093">10 mi</option>
-                    <option value="32187">20 mi</option>
-                </select>
+<a class="skip-link" href="#resultsPanel">Skip to results</a>
+
+<header role="banner">
+    <div class="header-inner">
+        <a class="brand" href="/" aria-label="CredRank home">
+            <span class="brand-mark" aria-hidden="true">CredRank</span>
+            <span class="brand-tag">Honest Rankings</span>
+        </a>
+        <form class="search-form" id="searchForm" role="search" aria-label="Search places"
+              onsubmit="event.preventDefault(); doSearch();">
+            <input class="search-query" type="text" id="query"
+                   placeholder="What are you looking for?"
+                   aria-label="Search query" autocomplete="off">
+            <div class="search-divider" aria-hidden="true"></div>
+            <input class="search-location" type="text" id="locationInput"
+                   placeholder="Where?"
+                   aria-label="Location" autocomplete="off">
+            <button class="locate-btn" type="button" onclick="useMyLocation()"
+                    aria-label="Use my current location" title="Use my location">📍</button>
+            <div class="search-divider" aria-hidden="true"></div>
+            <input class="search-radius" type="number" id="radiusInput"
+                   value="5.0" min="0.2" max="30" step="0.1"
+                   aria-label="Search radius in miles" title="Search radius">
+            <span class="search-radius-label" aria-hidden="true">mi</span>
+            <button class="search-go" type="submit" id="searchBtn">Search</button>
+        </form>
+    </div>
+    <input type="hidden" id="lat">
+    <input type="hidden" id="lng">
+</header>
+
+<main class="content show-list" id="contentArea">
+    <section class="results-panel" id="resultsPanel" role="region" aria-label="Search results" aria-live="polite">
+        <div class="empty-state">
+            <div class="empty-state-icon" aria-hidden="true">◆</div>
+            <div class="empty-state-title">Find the best, honestly.</div>
+            <div class="empty-state-text">We rank places using Bayesian statistics — no ads, no pay-to-play, just math.</div>
+            <div class="empty-state-steps" role="list">
+                <div role="listitem"><span class="step-num">1</span> Type what you're craving</div>
+                <div role="listitem"><span class="step-num">2</span> Enter a city or tap 📍</div>
+                <div role="listitem"><span class="step-num">3</span> Hit Search</div>
             </div>
-            <span class="advanced-toggle" onclick="toggleAdvanced()">▸ Coordinates</span>
-            <div class="advanced-fields" id="advancedFields">
-                <input type="number" id="lat" placeholder="Lat" step="0.001" style="width:90px">
-                <input type="number" id="lng" placeholder="Lng" step="0.001" style="width:90px">
-            </div>
-            <button id="searchBtn" onclick="doSearch()">Search</button>
         </div>
-    </header>
+    </section>
+    <div id="map" role="application" aria-label="Map showing search results"></div>
+</main>
 
-    <div class="content show-list" id="contentArea">
-        <div class="results-panel" id="resultsPanel">
-            <div class="loading">Search for something to get started</div>
+<div class="pro-bar" id="proBar">
+    <label title="Search overlapping areas to find 60+ results. Slower but more thorough.">
+        <input type="checkbox" id="deepSearchToggle">
+        Deep search <span class="pro-badge">Pro</span>
+    </label>
+</div>
+
+<nav class="mobile-tabs" id="mobileTabs" aria-label="View toggle">
+    <button class="active" onclick="showView('list')" aria-pressed="true">List</button>
+    <button onclick="showView('map')" aria-pressed="false">Map</button>
+</nav>
+
+<footer class="status-bar" role="status" aria-live="polite">
+    <span id="statusText">Ready</span>
+    <span id="statusRight"></span>
+</footer>
+
+<div class="modal-overlay" id="recommendModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+        <div class="modal-header">
+            <div><h2 id="modalTitle"></h2><div class="subtitle" id="modalSubtitle"></div></div>
+            <button class="modal-close" onclick="closeModal()" aria-label="Close">✕</button>
         </div>
-        <div id="map"></div>
+        <p id="modalSummary"></p>
+        <div id="modalRecs"></div>
+        <div id="modalAvoid"></div>
     </div>
+</div>
 
-    <div class="mobile-tabs" id="mobileTabs">
-        <button class="active" onclick="showView('list')">List</button>
-        <button onclick="showView('map')">Map</button>
-    </div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const METERS_PER_MILE = 1609.34;
+let currentLat = null, currentLng = null;
+let currentRadiusM = 5.0 * METERS_PER_MILE;
+let currentLocationName = '';
+let placeMarkers = [], searchCircle = null, centerMarker = null, radiusHandle = null;
+let currentResults = [];
 
-    <div class="status-bar" id="statusBar">Ready</div>
+const map = L.map('map', { zoomControl: false }).setView([37.54, -77.43], 12);
+L.control.zoom({ position: 'topright' }).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OSM &amp; CARTO', maxZoom: 19
+}).addTo(map);
 
-    <!-- Recommend modal -->
-    <div class="modal-overlay" id="recommendModal">
-        <div class="modal">
-            <h2 id="modalTitle"></h2>
-            <p class="subtitle" id="modalSubtitle"></p>
-            <p id="modalSummary"></p>
-            <div id="modalRecs"></div>
-            <div id="modalAvoid"></div>
-            <button class="close-btn" onclick="closeModal()">Close</button>
-        </div>
-    </div>
+function getScoreColor(s) { return s >= 80 ? '#2b9f5e' : s >= 60 ? '#4a8fe7' : s >= 40 ? '#d4a020' : s >= 20 ? '#d47020' : '#c43e3e'; }
+function getScoreShape(s) { return s >= 80 ? '▲' : s >= 60 ? '●' : s >= 40 ? '◆' : s >= 20 ? '▽' : '✕'; }
+function getScoreLabel(s) { return s >= 80 ? 'Excellent' : s >= 60 ? 'Good' : s >= 40 ? 'Average' : s >= 20 ? 'Below avg' : 'Poor'; }
+function milesToLabel(m) { return (m / METERS_PER_MILE).toFixed(1) + ' mi'; }
+function starsStr(r) { if (!r) return ''; return '★'.repeat(Math.floor(r)) + (r - Math.floor(r) >= 0.3 ? '½' : ''); }
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-        // --- State ---
-        let currentLat = null;
-        let currentLng = null;
-        let placeMarkers = [];
-        let searchCircle = null;
-        let centerMarker = null;
-        let radiusHandle = null;
-        let currentResults = [];
+// ═══ IP GEOLOCATION ═══
+(async function setDefaultLocation() {
+    try {
+        const r = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
+        const d = await r.json();
+        if (d.latitude && d.longitude) {
+            const label = [d.city, d.region].filter(Boolean).join(', ');
+            document.getElementById('locationInput').value = label;
+            setLocation(d.latitude, d.longitude, label);
+        }
+    } catch (e) {
+        document.getElementById('locationInput').value = 'Richmond, VA';
+        setLocation(37.54, -77.43, 'Richmond, VA');
+    }
+})();
 
-        // --- Map Setup ---
-        const map = L.map('map').setView([37.54, -77.43], 12);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OSM &amp; CARTO',
-            maxZoom: 19
+// ═══ GEOCODING ═══
+async function geocodeLocation(text) {
+    const resp = await fetch(`/api/geocode?address=${encodeURIComponent(text)}`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data.lat == null || data.lng == null) return null;
+    return { lat: data.lat, lng: data.lng, name: data.name };
+}
+
+async function reverseGeocodeLocation(lat, lng) {
+    const fallback = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+    const resp = await fetch(`/api/reverse-geocode?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`);
+    if (!resp.ok) return fallback;
+    const data = await resp.json();
+    return data.name || fallback;
+}
+
+// ═══ LOCATION (single source of truth) ═══
+function setLocation(lat, lng, label) {
+    currentLat = lat; currentLng = lng;
+    document.getElementById('lat').value = lat.toFixed(6);
+    document.getElementById('lng').value = lng.toFixed(6);
+    // Always prefer the text label over raw coordinates
+    if (label) {
+        currentLocationName = label;
+        document.getElementById('locationInput').value = label;
+    }
+    const zoom = currentRadiusM > 20000 ? 10 : currentRadiusM > 10000 ? 11 : currentRadiusM > 5000 ? 12 : 13;
+    map.setView([lat, lng], zoom);
+    drawSearchBoundary();
+}
+
+async function previewLocation() {
+    const loc = document.getElementById('locationInput').value.trim();
+    if (!loc) return;
+    setStatus('Finding location...');
+    const result = await geocodeLocation(loc);
+    if (result) setLocation(result.lat, result.lng, result.name);
+    else setStatus('Location not found');
+}
+
+// Clear stale coords when user types a new location
+document.getElementById('locationInput').addEventListener('input', function () {
+    document.getElementById('lat').value = '';
+    document.getElementById('lng').value = '';
+    currentLocationName = '';
+});
+document.getElementById('locationInput').addEventListener('blur', function () {
+    if (this.value.trim() && !document.getElementById('lat').value) previewLocation();
+});
+
+function useMyLocation() {
+    if (!navigator.geolocation) { setStatus('Geolocation not supported'); return; }
+    const btn = document.querySelector('.locate-btn');
+    btn.textContent = '⏳';
+    navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+            const lat = pos.coords.latitude, lng = pos.coords.longitude;
+            let label = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+            try {
+                label = await reverseGeocodeLocation(lat, lng);
+            } catch (e) { /* fall back to coords */ }
+            setLocation(lat, lng, label);
+            btn.textContent = '📍';
+            setStatus('Using your location');
+        },
+        () => { btn.textContent = '📍'; setStatus('Location access denied — type a city name'); },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
+
+async function resolveLocation() {
+    const latVal = document.getElementById('lat').value;
+    const lngVal = document.getElementById('lng').value;
+    // Check for actual values (not empty strings), handle 0 as valid
+    if (latVal !== '' && lngVal !== '') {
+        currentLat = parseFloat(latVal); currentLng = parseFloat(lngVal);
+        return true;
+    }
+    const loc = document.getElementById('locationInput').value.trim();
+    if (loc) {
+        setStatus('Finding location...');
+        const result = await geocodeLocation(loc);
+        if (result) { setLocation(result.lat, result.lng, result.name); return true; }
+        setStatus('Location not found');
+        return false;
+    }
+    setStatus('Enter a location or tap 📍');
+    return false;
+}
+
+// ═══ RADIUS ═══
+function setRadius(meters) {
+    currentRadiusM = Math.max(322, Math.min(48280, meters));
+    document.getElementById('radiusInput').value = (currentRadiusM / METERS_PER_MILE).toFixed(1);
+    if (currentLat != null && currentLng != null) drawSearchBoundary();
+}
+document.getElementById('radiusInput').addEventListener('change', function () {
+    const mi = parseFloat(this.value);
+    if (!isNaN(mi) && mi > 0) setRadius(mi * METERS_PER_MILE);
+});
+
+// ═══ BOUNDARY ═══
+function drawSearchBoundary() {
+    if (currentLat == null || currentLng == null) return;
+    if (searchCircle) map.removeLayer(searchCircle);
+    if (centerMarker) map.removeLayer(centerMarker);
+    if (radiusHandle) map.removeLayer(radiusHandle);
+
+    searchCircle = L.circle([currentLat, currentLng], {
+        radius: currentRadiusM, color: '#c9a84c', fillColor: '#c9a84c',
+        fillOpacity: 0.04, weight: 1.5, dashArray: '6 4',
+    }).addTo(map);
+
+    centerMarker = L.marker([currentLat, currentLng], {
+        draggable: true,
+        icon: L.divIcon({ className: '',
+            html: '<div style="width:12px;height:12px;background:#c9a84c;border:2px solid #0b0d11;border-radius:50%;box-shadow:0 2px 8px rgba(201,168,76,0.4)"></div>',
+            iconSize: [12, 12], iconAnchor: [6, 6],
+        }),
+    }).addTo(map);
+    centerMarker.on('dragend', function (e) {
+        const p = e.target.getLatLng();
+        // Keep the current name — user is fine-tuning, not changing cities
+        setLocation(p.lat, p.lng, currentLocationName || `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`);
+    });
+
+    const handleLng = currentLng + currentRadiusM / (111320 * Math.cos(currentLat * Math.PI / 180));
+    radiusHandle = L.marker([currentLat, handleLng], {
+        draggable: true,
+        icon: L.divIcon({ className: '',
+            html: '<div style="width:10px;height:10px;background:#facc15;border:2px solid #0b0d11;border-radius:50%;box-shadow:0 2px 6px rgba(250,204,21,0.3)"></div>',
+            iconSize: [10, 10], iconAnchor: [5, 5],
+        }),
+    }).addTo(map);
+    radiusHandle.bindTooltip(milesToLabel(currentRadiusM), {
+        permanent: false, direction: 'top', offset: [0, -10], className: 'radius-tooltip',
+    });
+    radiusHandle.on('drag', function (e) {
+        const center = centerMarker.getLatLng();
+        const nr = Math.max(322, Math.min(48280, Math.round(center.distanceTo(e.target.getLatLng()))));
+        currentRadiusM = nr;
+        document.getElementById('radiusInput').value = (nr / METERS_PER_MILE).toFixed(1);
+        radiusHandle.setTooltipContent(milesToLabel(nr));
+        radiusHandle.openTooltip();
+        if (searchCircle) map.removeLayer(searchCircle);
+        searchCircle = L.circle([center.lat, center.lng], {
+            radius: nr, color: '#c9a84c', fillColor: '#c9a84c',
+            fillOpacity: 0.04, weight: 1.5, dashArray: '6 4',
         }).addTo(map);
+    });
+    radiusHandle.on('dragend', drawSearchBoundary);
+}
 
-        // --- Geocoding ---
-        async function geocodeLocation(text) {
-            const key = await fetch('/api/config/maps-key').then(r => r.json()).then(d => d.key).catch(() => null);
-            if (!key) {
-                setStatus('Geocoding unavailable');
-                return null;
-            }
+// ═══ MOBILE ═══
+function showView(view) {
+    const c = document.getElementById('contentArea');
+    const tabs = document.getElementById('mobileTabs').querySelectorAll('button');
+    c.classList.remove('show-list', 'show-map');
+    c.classList.add('show-' + view);
+    tabs.forEach((t, i) => {
+        t.classList.toggle('active', (view === 'list' && i === 0) || (view === 'map' && i === 1));
+        t.setAttribute('aria-pressed', t.classList.contains('active'));
+    });
+    if (view === 'map') setTimeout(() => map.invalidateSize(), 100);
+}
 
-            const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(text)}&key=${key}`;
-            const resp = await fetch(url);
-            const data = await resp.json();
+// ═══ SEARCH ═══
+async function doSearch() {
+    const query = document.getElementById('query').value.trim();
+    const btn = document.getElementById('searchBtn');
+    if (!query) { document.getElementById('query').focus(); setStatus("Type what you're looking for"); return; }
+    btn.disabled = true; btn.textContent = '...';
+    const hasLoc = await resolveLocation();
+    if (!hasLoc) { btn.disabled = false; btn.textContent = 'Search'; return; }
+    const deep = document.getElementById('deepSearchToggle')?.checked || false;
+    const maxResults = deep ? 200 : 60;
+    document.getElementById('resultsPanel').innerHTML = `
+        <div class="loading-indicator" role="alert" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <div class="loading-text">${deep ? 'Deep searching (this takes a moment)...' : 'Searching and ranking...'}</div>
+        </div>`;
+    setStatus('Searching...');
+    try {
+        const resp = await fetch('/api/search', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, lat: currentLat, lng: currentLng, radius_m: Math.round(currentRadiusM), max_results: maxResults, deep_search: deep })
+        });
+        const data = await resp.json();
+        currentResults = data.places;
+        renderResults(data);
+        renderPlaceMarkers(data.places);
+        drawSearchBoundary();
+        const zoom = currentRadiusM > 20000 ? 10 : currentRadiusM > 10000 ? 11 : currentRadiusM > 5000 ? 12 : 13;
+        map.setView([currentLat, currentLng], zoom);
+        const parts = [`${data.result_count} results`];
+        if (data.filtered_count) parts.push(`${data.filtered_count} irrelevant filtered`);
+        if (data.subcircle_count) parts.push(`${data.subcircle_count} areas searched`);
+        setStatus(parts.join(' · '), `"${data.query}"`);
+    } catch (e) {
+        document.getElementById('resultsPanel').innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon" aria-hidden="true">!</div>
+                <div class="empty-state-title">Something went wrong</div>
+                <div class="empty-state-text">${escapeHtml(e.message)}. Try again?</div>
+            </div>`;
+        setStatus('Error: ' + e.message);
+    } finally { btn.disabled = false; btn.textContent = 'Search'; }
+}
 
-            if (data.results && data.results.length > 0) {
-                const loc = data.results[0].geometry.location;
-                return { lat: loc.lat, lng: loc.lng, name: data.results[0].formatted_address };
-            }
-            return null;
-        }
+// ═══ RENDER ═══
+function renderResults(data) {
+    const panel = document.getElementById('resultsPanel');
+    if (!data.places.length) {
+        panel.innerHTML = `<div class="empty-state"><div class="empty-state-icon" aria-hidden="true">∅</div><div class="empty-state-title">Nothing here</div><div class="empty-state-text">No results in this area. Try expanding the radius or changing your search.</div></div>`;
+        return;
+    }
+    const metaParts = [];
+    if (data.filtered_count) metaParts.push(`${data.filtered_count} filtered`);
+    if (data.subcircle_count) metaParts.push(`${data.subcircle_count} areas`);
+    const metaHtml = metaParts.length ? `<span class="results-meta">${metaParts.join(' · ')}</span>` : '';
 
-        // --- Use My Location ---
-        function useMyLocation() {
-            if (!navigator.geolocation) {
-                setStatus('Geolocation not supported by this browser');
-                return;
-            }
-
-            const btn = document.querySelector('.locate-btn');
-            btn.textContent = '⏳ Locating...';
-
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    currentLat = pos.coords.latitude;
-                    currentLng = pos.coords.longitude;
-                    document.getElementById('lat').value = currentLat.toFixed(4);
-                    document.getElementById('lng').value = currentLng.toFixed(4);
-                    document.getElementById('locationInput').value = `${currentLat.toFixed(3)}, ${currentLng.toFixed(3)}`;
-                    map.setView([currentLat, currentLng], 13);
-                    drawSearchBoundary();
-                    btn.textContent = '📍 Near me';
-                    setStatus('Using your location');
-                },
-                (err) => {
-                    btn.textContent = '📍 Near me';
-                    if (err.code === 1) {
-                        setStatus('Location access denied — try entering a city name instead');
-                    } else if (err.code === 3) {
-                        setStatus('Location timed out — try entering a city name instead');
-                    } else {
-                        setStatus('Location requires HTTPS — enter a city name or use desktop');
-                    }
-                },
-                { enableHighAccuracy: true, timeout: 10000 }
-            );
-        }
-
-        // --- Resolve location before search ---
-        async function resolveLocation() {
-            const locInput = document.getElementById('locationInput').value.trim();
-            const latInput = document.getElementById('lat').value;
-            const lngInput = document.getElementById('lng').value;
-
-            if (latInput && lngInput) {
-                currentLat = parseFloat(latInput);
-                currentLng = parseFloat(lngInput);
-                return true;
-            }
-
-            if (locInput) {
-                setStatus('Finding location...');
-                const result = await geocodeLocation(locInput);
-                if (result) {
-                    currentLat = result.lat;
-                    currentLng = result.lng;
-                    document.getElementById('lat').value = result.lat.toFixed(4);
-                    document.getElementById('lng').value = result.lng.toFixed(4);
-                    document.getElementById('locationInput').value = result.name;
-                    return true;
-                } else {
-                    setStatus('Location not found — try a different search');
-                    return false;
-                }
-            }
-
-            setStatus('Enter a location or tap 📍 Near me');
-            return false;
-        }
-
-        // --- Boundary drawing (circle only — rectangle is hidden backend detail) ---
-        function getRadius() {
-            return parseInt(document.getElementById('radiusSelect').value);
-        }
-
-        function drawSearchBoundary() {
-            if (!currentLat || !currentLng) return;
-            const radius = getRadius();
-
-            if (searchCircle) map.removeLayer(searchCircle);
-            if (centerMarker) map.removeLayer(centerMarker);
-            if (radiusHandle) map.removeLayer(radiusHandle);
-
-            // Clean circle boundary
-            searchCircle = L.circle([currentLat, currentLng], {
-                radius: radius,
-                color: '#818cf8',
-                fillColor: '#818cf8',
-                fillOpacity: 0.04,
-                weight: 2,
-                dashArray: '8 4',
-            }).addTo(map);
-
-            // Draggable center
-            centerMarker = L.marker([currentLat, currentLng], {
-                draggable: true,
-                icon: L.divIcon({
-                    className: '',
-                    html: '<div style="width:14px;height:14px;background:#818cf8;border:2px solid #0f1117;border-radius:50%;"></div>',
-                    iconSize: [14, 14],
-                    iconAnchor: [7, 7],
-                }),
-            }).addTo(map);
-
-            centerMarker.bindTooltip('Drag to move center', { direction: 'top', offset: [0, -10] });
-
-            centerMarker.on('dragend', function(e) {
-                const pos = e.target.getLatLng();
-                currentLat = pos.lat;
-                currentLng = pos.lng;
-                document.getElementById('lat').value = pos.lat.toFixed(4);
-                document.getElementById('lng').value = pos.lng.toFixed(4);
-                document.getElementById('locationInput').value = `${pos.lat.toFixed(3)}, ${pos.lng.toFixed(3)}`;
-                drawSearchBoundary();
-            });
-
-            // Draggable radius handle
-            const handleLng = currentLng + radius / (111320 * Math.cos(currentLat * Math.PI / 180));
-            radiusHandle = L.marker([currentLat, handleLng], {
-                draggable: true,
-                icon: L.divIcon({
-                    className: '',
-                    html: '<div style="width:10px;height:10px;background:#facc15;border:2px solid #0f1117;border-radius:50%;"></div>',
-                    iconSize: [10, 10],
-                    iconAnchor: [5, 5],
-                }),
-            }).addTo(map);
-
-            radiusHandle.bindTooltip('Drag to resize', { direction: 'top', offset: [0, -10] });
-
-            radiusHandle.on('drag', function(e) {
-                const center = centerMarker.getLatLng();
-                const handle = e.target.getLatLng();
-                const newRadius = Math.round(center.distanceTo(handle));
-
-                // Snap to nearest option
-                const options = [1609, 4828, 8047, 16093, 32187];
-                const closest = options.reduce((a, b) => Math.abs(b - newRadius) < Math.abs(a - newRadius) ? b : a);
-                document.getElementById('radiusSelect').value = closest;
-
-                if (searchCircle) map.removeLayer(searchCircle);
-                searchCircle = L.circle([center.lat, center.lng], {
-                    radius: newRadius,
-                    color: '#818cf8',
-                    fillColor: '#818cf8',
-                    fillOpacity: 0.04,
-                    weight: 2,
-                    dashArray: '8 4',
-                }).addTo(map);
-            });
-        }
-
-        document.getElementById('radiusSelect').addEventListener('change', drawSearchBoundary);
-
-        // --- Mobile view toggle ---
-        function showView(view) {
-            const content = document.getElementById('contentArea');
-            const tabs = document.getElementById('mobileTabs').querySelectorAll('button');
-
-            content.classList.remove('show-list', 'show-map');
-            content.classList.add('show-' + view);
-
-            tabs.forEach(t => t.classList.remove('active'));
-            tabs[view === 'list' ? 0 : 1].classList.add('active');
-
-            if (view === 'map') {
-                setTimeout(() => map.invalidateSize(), 100);
-            }
-        }
-
-        // --- Search ---
-        async function doSearch() {
-            const query = document.getElementById('query').value;
-            const btn = document.getElementById('searchBtn');
-
-            if (!query.trim()) {
-                setStatus('Enter a search query');
-                return;
-            }
-
-            btn.disabled = true;
-            btn.textContent = 'Searching...';
-
-            const hasLocation = await resolveLocation();
-            if (!hasLocation) {
-                btn.disabled = false;
-                btn.textContent = 'Search';
-                return;
-            }
-
-            const radius = getRadius();
-            setStatus('Searching and ranking...');
-
-            try {
-                const resp = await fetch('/api/search', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ query, lat: currentLat, lng: currentLng, radius_m: radius, max_results: 20 })
-                });
-                const data = await resp.json();
-                currentResults = data.places;
-                renderResults(data);
-                renderPlaceMarkers(data.places);
-                drawSearchBoundary();
-
-                map.setView([currentLat, currentLng], radius > 20000 ? 10 : radius > 10000 ? 11 : radius > 5000 ? 12 : 13);
-
-                setStatus(`Found ${data.result_count} results for "${data.query}"`);
-            } catch (e) {
-                setStatus('Error: ' + e.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Search';
-            }
-        }
-
-        // --- Render Results ---
-        function renderResults(data) {
-            const panel = document.getElementById('resultsPanel');
-
-            if (!data.places.length) {
-                panel.innerHTML = '<div class="loading">No results found</div>';
-                return;
-            }
-
-            panel.innerHTML = data.places.map(p => `
-                <div class="result-card" id="card-${p.rank}" onclick="focusPlace(${p.rank})">
-                    <div class="rank-badge">${p.rank}</div>
-                    <div class="place-info">
-                        <div class="place-name">${p.name}</div>
-                        <div class="place-meta">
-                            <span class="score">CS ${p.credscore}</span>
-                            <span class="rating">${p.rating ? '★ ' + p.rating : 'N/A'}</span>
-                            <span>${p.user_rating_count ? p.user_rating_count.toLocaleString() + ' reviews' : ''}</span>
-                        </div>
-                        <div class="place-address">${p.address || ''}</div>
-                        <div class="place-summary" id="summary-${p.rank}"></div>
-                        <button class="summary-btn" id="summaryBtn-${p.rank}" onclick="event.stopPropagation(); loadSummary(${p.rank})">
-                            Summarize
-                        </button>
-                        <button class="summary-btn" onclick="event.stopPropagation(); loadRecommend(${p.rank})" style="margin-left:4px">
-                            What to order
-                        </button>
-                    </div>
+    let html = `<div class="results-header"><div class="results-count"><strong>${data.result_count}</strong> ranked for "${escapeHtml(data.query)}"</div>${metaHtml}</div>`;
+    html += data.places.map((p, i) => `
+        <div class="result-card" id="card-${p.rank}" tabindex="0" role="button"
+             aria-label="${escapeHtml(p.name)}, rank ${p.rank}, CredScore ${Math.round(p.credscore)} ${getScoreLabel(p.credscore)}"
+             onclick="focusPlace(${p.rank})" onkeydown="if(event.key==='Enter')focusPlace(${p.rank})"
+             style="animation-delay:${Math.min(i * 0.04, 0.6)}s">
+            <div class="score-col">
+                <div class="credscore" style="color:${getScoreColor(p.credscore)}" aria-hidden="true">${Math.round(p.credscore)}</div>
+                <div class="score-indicator" style="color:${getScoreColor(p.credscore)}" aria-hidden="true">${getScoreShape(p.credscore)}</div>
+                <div class="credscore-label" aria-hidden="true">CRED</div>
+                <div class="rank-num">#${p.rank}</div>
+            </div>
+            <div class="place-info">
+                <div class="place-name">${escapeHtml(p.name)}</div>
+                <div class="place-meta">
+                    <span class="google-stars" aria-label="${p.rating ? p.rating + ' stars' : 'Not rated'}">${starsStr(p.rating)}</span>
+                    <span>${p.rating || '—'}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>${p.user_rating_count != null ? p.user_rating_count.toLocaleString() + ' reviews' : 'No reviews'}</span>
                 </div>
-            `).join('');
+                <div class="place-address">${escapeHtml(p.address || '')}</div>
+                <div class="place-summary" id="summary-${p.rank}"></div>
+                <div class="card-actions">
+                    <button class="action-btn" id="summaryBtn-${p.rank}" onclick="event.stopPropagation();loadSummary(${p.rank})" aria-label="AI summary for ${escapeHtml(p.name)}">Summarize</button>
+                    <button class="action-btn" onclick="event.stopPropagation();loadRecommend(${p.rank})" aria-label="Menu tips for ${escapeHtml(p.name)}">What to order</button>
+                </div>
+            </div>
+        </div>`).join('');
+    panel.innerHTML = html;
+}
+
+function renderPlaceMarkers(places) {
+    placeMarkers.forEach(m => map.removeLayer(m)); placeMarkers = [];
+    places.forEach(p => {
+        if (p.lat == null || p.lng == null) return;
+        const sz = p.rank <= 3 ? 9 : p.rank <= 10 ? 7 : 5;
+        const m = L.circleMarker([p.lat, p.lng], {
+            radius: sz, fillColor: getScoreColor(p.credscore), color: '#0b0d11', weight: 2, fillOpacity: 0.9
+        }).addTo(map);
+        const reviewStr = (p.rating && p.user_rating_count != null) ? `★ ${p.rating} · ${p.user_rating_count.toLocaleString()} reviews` : 'Unrated';
+        m.bindPopup(`<div style="font-family:'DM Sans',system-ui;font-size:13px;min-width:180px;line-height:1.5"><div style="font-family:'Instrument Serif',serif;font-size:28px;font-style:italic;color:${getScoreColor(p.credscore)}">${Math.round(p.credscore)}</div><strong>#${p.rank} ${escapeHtml(p.name)}</strong><br>${reviewStr}<br><small style="color:#8e90a0">${escapeHtml(p.address || '')}</small></div>`);
+        m.placeRank = p.rank; placeMarkers.push(m);
+    });
+}
+
+function focusPlace(rank) {
+    document.querySelectorAll('.result-card').forEach(c => c.classList.remove('active'));
+    document.getElementById('card-' + rank)?.classList.add('active');
+    if (window.innerWidth <= 768) showView('map');
+    const m = placeMarkers.find(m => m.placeRank === rank);
+    if (m) { map.setView(m.getLatLng(), 15); m.openPopup(); }
+}
+
+async function loadSummary(rank) {
+    const btn = document.getElementById('summaryBtn-' + rank);
+    const el = document.getElementById('summary-' + rank);
+    const place = currentResults.find(p => p.rank === rank);
+    if (!place) return;
+    btn.disabled = true; btn.textContent = 'Loading...';
+    try {
+        const resp = await fetch('/api/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ place_id: place.place_id }) });
+        const data = await resp.json();
+        el.textContent = data.summary; btn.style.display = 'none';
+    } catch (e) { el.textContent = 'Failed to load summary'; btn.disabled = false; btn.textContent = 'Retry'; }
+}
+
+async function loadRecommend(rank) {
+    const place = currentResults.find(p => p.rank === rank);
+    if (!place) return;
+    document.getElementById('modalTitle').textContent = place.name;
+    document.getElementById('modalSubtitle').textContent = 'Analyzing reviews...';
+    document.getElementById('modalSummary').textContent = '';
+    document.getElementById('modalRecs').innerHTML = '';
+    document.getElementById('modalAvoid').innerHTML = '';
+    document.getElementById('recommendModal').classList.add('visible');
+    try {
+        const resp = await fetch('/api/recommend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ place_id: place.place_id }) });
+        const data = await resp.json();
+        document.getElementById('modalSubtitle').textContent = 'What to order';
+        document.getElementById('modalSummary').textContent = data.summary;
+        if (data.recommendations.length) {
+            document.getElementById('modalRecs').innerHTML = data.recommendations.map((r, i) => `<div class="rec-item"><span class="rec-name">${i+1}. ${escapeHtml(r.item)}</span>${r.mentions ? `<span class="rec-mentions"> · mentioned ${r.mentions}×</span>` : ''}<div class="rec-why">${escapeHtml(r.why)}</div></div>`).join('');
         }
-
-        // --- Map Markers ---
-        function renderPlaceMarkers(places) {
-            placeMarkers.forEach(m => map.removeLayer(m));
-            placeMarkers = [];
-
-            places.forEach(p => {
-                if (p.lat == null || p.lng == null) return;
-
-                const marker = L.circleMarker([p.lat, p.lng], {
-                    radius: Math.max(6, 14 - p.rank * 0.5),
-                    fillColor: getScoreColor(p.credscore),
-                    color: '#0f1117',
-                    weight: 2,
-                    fillOpacity: 0.9
-                }).addTo(map);
-
-                marker.bindPopup(`
-                    <div style="font-family:system-ui;font-size:13px;min-width:180px">
-                        <strong>#${p.rank} ${p.name}</strong><br>
-                        <span style="color:#818cf8;font-weight:600">CredScore: ${p.credscore}</span><br>
-                        ${p.rating ? '★ ' + p.rating + ' (' + p.user_rating_count.toLocaleString() + ')' : 'Unrated'}<br>
-                        <small>${p.address || ''}</small>
-                    </div>
-                `);
-
-                marker.placeRank = p.rank;
-                placeMarkers.push(marker);
-            });
+        if (data.avoid && data.avoid.length) {
+            document.getElementById('modalAvoid').innerHTML = `<div class="avoid-section"><div class="avoid-label">Maybe skip</div>${data.avoid.map(a => `<div class="avoid-item">· ${escapeHtml(a.item)} — ${escapeHtml(a.why)}</div>`).join('')}</div>`;
         }
+    } catch (e) { document.getElementById('modalSubtitle').textContent = 'Error loading recommendations'; }
+}
 
-        function getScoreColor(score) {
-            if (score >= 80) return '#4ade80';
-            if (score >= 60) return '#818cf8';
-            if (score >= 40) return '#facc15';
-            if (score >= 20) return '#fb923c';
-            return '#f87171';
-        }
+function closeModal() { document.getElementById('recommendModal').classList.remove('visible'); }
+document.getElementById('recommendModal').addEventListener('click', function (e) { if (e.target === this) closeModal(); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
 
-        // --- Focus Place ---
-        function focusPlace(rank) {
-            document.querySelectorAll('.result-card').forEach(c => c.classList.remove('active'));
-            document.getElementById('card-' + rank).classList.add('active');
-
-            if (window.innerWidth <= 768) showView('map');
-
-            const marker = placeMarkers.find(m => m.placeRank === rank);
-            if (marker) {
-                map.setView(marker.getLatLng(), 15);
-                marker.openPopup();
-            }
-        }
-
-        // --- Summarize ---
-        async function loadSummary(rank) {
-            const btn = document.getElementById('summaryBtn-' + rank);
-            const el = document.getElementById('summary-' + rank);
-            const place = currentResults.find(p => p.rank === rank);
-            if (!place) return;
-
-            btn.disabled = true;
-            btn.textContent = 'Loading...';
-
-            try {
-                const resp = await fetch('/api/summarize', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ place_id: place.place_id })
-                });
-                const data = await resp.json();
-                el.textContent = data.summary;
-                btn.style.display = 'none';
-            } catch (e) {
-                el.textContent = 'Failed to load summary';
-                btn.disabled = false;
-                btn.textContent = 'Retry';
-            }
-        }
-
-        // --- Recommend ---
-        async function loadRecommend(rank) {
-            const place = currentResults.find(p => p.rank === rank);
-            if (!place) return;
-
-            document.getElementById('modalTitle').textContent = place.name;
-            document.getElementById('modalSubtitle').textContent = 'Analyzing reviews...';
-            document.getElementById('modalSummary').textContent = '';
-            document.getElementById('modalRecs').innerHTML = '';
-            document.getElementById('modalAvoid').innerHTML = '';
-            document.getElementById('recommendModal').classList.add('visible');
-
-            try {
-                const resp = await fetch('/api/recommend', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ place_id: place.place_id })
-                });
-                const data = await resp.json();
-
-                document.getElementById('modalSubtitle').textContent = 'What should you order?';
-                document.getElementById('modalSummary').textContent = data.summary;
-
-                if (data.recommendations.length) {
-                    document.getElementById('modalRecs').innerHTML = data.recommendations.map((r, i) => `
-                        <div class="rec-item">
-                            <span class="rec-name">${i + 1}. ${r.item}</span>
-                            ${r.mentions ? `<span class="rec-mentions"> (mentioned ${r.mentions}x)</span>` : ''}
-                            <div class="rec-why">${r.why}</div>
-                        </div>
-                    `).join('');
-                }
-
-                if (data.avoid && data.avoid.length) {
-                    document.getElementById('modalAvoid').innerHTML = `
-                        <div class="avoid-section">
-                            <div class="avoid-label">Maybe skip:</div>
-                            ${data.avoid.map(a => `
-                                <div class="avoid-item">${a.item} — ${a.why}</div>
-                            `).join('')}
-                        </div>
-                    `;
-                }
-            } catch (e) {
-                document.getElementById('modalSubtitle').textContent = 'Error loading recommendations';
-            }
-        }
-
-        function closeModal() {
-            document.getElementById('recommendModal').classList.remove('visible');
-        }
-
-        document.getElementById('recommendModal').addEventListener('click', function(e) {
-            if (e.target === this) closeModal();
-        });
-
-        // --- Advanced toggle ---
-        function toggleAdvanced() {
-            const el = document.getElementById('advancedFields');
-            const toggle = document.querySelector('.advanced-toggle');
-            el.classList.toggle('visible');
-            toggle.textContent = el.classList.contains('visible') ? '▾ Coordinates' : '▸ Coordinates';
-        }
-
-        // --- Status ---
-        function setStatus(msg) {
-            document.getElementById('statusBar').textContent = msg;
-        }
-
-        // --- Enter key ---
-        document.querySelectorAll('#query, #locationInput').forEach(el => {
-            el.addEventListener('keydown', e => {
-                if (e.key === 'Enter') doSearch();
-            });
-        });
-    </script>
+function setStatus(msg, right) {
+    document.getElementById('statusText').textContent = msg;
+    document.getElementById('statusRight').textContent = right || '';
+}
+</script>
 </body>
 </html>

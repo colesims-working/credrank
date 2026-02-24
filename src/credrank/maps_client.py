@@ -1,5 +1,6 @@
 """Google Places API (New) client."""
 
+import logging
 import math
 import time
 
@@ -10,6 +11,7 @@ from credrank.models import PlaceResult, PlaceSearchParams, Review
 
 BASE_URL = "https://places.googleapis.com/v1/places:searchText"
 DETAIL_URL = "https://places.googleapis.com/v1/places"
+log = logging.getLogger(__name__)
 
 # Lightweight mask for search results — no reviews, no summaries.
 # Billed at Enterprise SKU (rating + userRatingCount) but skips Atmosphere.
@@ -123,6 +125,15 @@ def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
     places within the actual circle radius for honest boundaries.
     """
     lat, lng = params.location
+    started_at = time.perf_counter()
+    log.info(
+        "maps.search.start query=%r lat=%.6f lng=%.6f radius_m=%d max_results=%d",
+        params.query,
+        lat,
+        lng,
+        params.radius_m,
+        params.max_results,
+    )
 
     body = {
         "textQuery": params.query,
@@ -138,14 +149,38 @@ def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
 
     results: list[PlaceResult] = []
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=10) as client:
         while True:
-            resp = client.post(BASE_URL, json=body, headers=headers)
-            resp.raise_for_status()
+            try:
+                resp = client.post(BASE_URL, json=body, headers=headers)
+                resp.raise_for_status()
+            except httpx.TimeoutException as exc:
+                log.warning(
+                    "maps.search.timeout query=%r page_token=%r",
+                    params.query,
+                    body.get("pageToken"),
+                )
+                raise exc
+            except httpx.HTTPError as exc:
+                log.warning(
+                    "maps.search.error query=%r page_token=%r error=%s",
+                    params.query,
+                    body.get("pageToken"),
+                    exc,
+                )
+                raise exc
             data = resp.json()
 
             for place in data.get("places", []):
-                results.append(_parse_place(place))
+                parsed = _parse_place(place)
+                results.append(parsed)
+                log.debug(
+                    "maps.search.place place_id=%s name=%r rating=%s reviews=%s",
+                    parsed.place_id,
+                    parsed.name,
+                    parsed.rating,
+                    parsed.user_rating_count,
+                )
 
             next_token = data.get("nextPageToken")
             if not next_token or len(results) >= params.max_results:
@@ -164,7 +199,17 @@ def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
         else:
             filtered.append(p)  # Keep places without coords (rare edge case)
 
-    return filtered[: params.max_results]
+    final = filtered[: params.max_results]
+    duration_ms = int((time.perf_counter() - started_at) * 1000)
+    log.info(
+        "maps.search.done query=%r raw_count=%d in_radius=%d returned=%d duration_ms=%d",
+        params.query,
+        len(results),
+        len(filtered),
+        len(final),
+        duration_ms,
+    )
+    return final
 
 
 def get_place_details(place_id: str) -> PlaceResult | None:
@@ -173,6 +218,8 @@ def get_place_details(place_id: str) -> PlaceResult | None:
     This uses the Atmosphere SKU — only call it when you need LLM input.
     """
     url = f"{DETAIL_URL}/{place_id}"
+    started_at = time.perf_counter()
+    log.info("maps.details.start place_id=%s", place_id)
 
     headers = {
         "X-Goog-Api-Key": get_api_key(),
@@ -180,9 +227,32 @@ def get_place_details(place_id: str) -> PlaceResult | None:
         "Content-Type": "application/json",
     }
 
-    with httpx.Client() as client:
-        resp = client.get(url, headers=headers)
-        if resp.status_code == 404:
-            return None
-        resp.raise_for_status()
-        return _parse_place(resp.json())
+    with httpx.Client(timeout=10) as client:
+        try:
+            resp = client.get(url, headers=headers)
+            if resp.status_code == 404:
+                log.info("maps.details.not_found place_id=%s", place_id)
+                return None
+            resp.raise_for_status()
+        except httpx.TimeoutException as exc:
+            log.warning("maps.details.timeout place_id=%s", place_id)
+            raise exc
+        except httpx.HTTPError as exc:
+            log.warning("maps.details.error place_id=%s error=%s", place_id, exc)
+            raise exc
+
+        parsed = _parse_place(resp.json())
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        log.debug(
+            "maps.details.place place_id=%s name=%r rating=%s reviews=%s",
+            parsed.place_id,
+            parsed.name,
+            parsed.rating,
+            parsed.user_rating_count,
+        )
+        log.info(
+            "maps.details.done place_id=%s duration_ms=%d",
+            place_id,
+            duration_ms,
+        )
+        return parsed

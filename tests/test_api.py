@@ -8,6 +8,13 @@ from credrank.api import app
 from credrank.models import PlaceResult, Review
 
 client = TestClient(app)
+FAKE_RECOMMEND = {
+    "place_name": "Test",
+    "place_id": "123",
+    "summary": "Good",
+    "recommendations": [],
+    "avoid": [],
+}
 
 FAKE_PLACES = [
     PlaceResult(
@@ -56,8 +63,10 @@ FAKE_DETAIL = PlaceResult(
 )
 
 
+@patch("credrank.api.get_relevant_types", return_value=None)
 @patch("credrank.api.search_places", return_value=FAKE_PLACES)
-def test_search_returns_ranked_results(mock_search):
+def test_search_returns_ranked_results(mock_search, mock_relevant):
+    _ = (mock_search, mock_relevant)
     resp = client.post(
         "/api/search",
         json={
@@ -80,8 +89,10 @@ def test_search_returns_ranked_results(mock_search):
         assert 0.0 <= p["credscore"] <= 100.0
 
 
+@patch("credrank.api.get_relevant_types", return_value=None)
 @patch("credrank.api.search_places", return_value=[])
-def test_search_empty_results(mock_search):
+def test_search_empty_results(mock_search, mock_relevant):
+    _ = (mock_search, mock_relevant)
     resp = client.post(
         "/api/search",
         json={
@@ -97,12 +108,16 @@ def test_search_empty_results(mock_search):
     assert data["places"] == []
 
 
-def test_search_validates_required_fields():
+@patch("credrank.api.get_relevant_types", return_value=None)
+def test_search_validates_required_fields(mock_relevant):
+    _ = mock_relevant
     resp = client.post("/api/search", json={"lat": 37.54, "lng": -77.43})
     assert resp.status_code == 422
 
 
-def test_search_validates_lat_bounds():
+@patch("credrank.api.get_relevant_types", return_value=None)
+def test_search_validates_lat_bounds(mock_relevant):
+    _ = mock_relevant
     resp = client.post(
         "/api/search",
         json={
@@ -114,7 +129,9 @@ def test_search_validates_lat_bounds():
     assert resp.status_code == 422
 
 
-def test_search_validates_radius_cap():
+@patch("credrank.api.get_relevant_types", return_value=None)
+def test_search_validates_radius_cap(mock_relevant):
+    _ = mock_relevant
     resp = client.post(
         "/api/search",
         json={
@@ -127,34 +144,42 @@ def test_search_validates_radius_cap():
     assert resp.status_code == 422
 
 
+@patch("credrank.api.summarize_place", return_value="Great place")
 @patch("credrank.api.get_place_details", return_value=FAKE_DETAIL)
-def test_summarize_returns_summary(mock_details):
+def test_summarize_returns_summary(mock_details, mock_summarize):
+    _ = (mock_details, mock_summarize)
     resp = client.post("/api/summarize", json={"place_id": "ChIJ_1"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["place_id"] == "ChIJ_1"
     assert data["name"] == "Top Spot"
-    assert len(data["summary"]) > 0
+    assert data["summary"] == "Great place"
 
 
+@patch("credrank.api.summarize_place", return_value="Great place")
 @patch("credrank.api.get_place_details", return_value=None)
-def test_summarize_place_not_found(mock_details):
+def test_summarize_place_not_found(mock_details, mock_summarize):
+    _ = (mock_details, mock_summarize)
     resp = client.post("/api/summarize", json={"place_id": "nonexistent"})
     assert resp.status_code == 404
 
 
+@patch("credrank.api.recommend_items", return_value=FAKE_RECOMMEND)
 @patch("credrank.api.get_place_details", return_value=FAKE_DETAIL)
-def test_recommend_returns_analysis(mock_details):
+def test_recommend_returns_analysis(mock_details, mock_recommend):
+    _ = (mock_details, mock_recommend)
     resp = client.post("/api/recommend", json={"place_id": "ChIJ_1"})
     assert resp.status_code == 200
     data = resp.json()
-    assert data["place_id"] == "ChIJ_1"
+    assert data["place_id"] == "123"
     assert "recommendations" in data
     assert "avoid" in data
-    assert len(data["summary"]) > 0
+    assert data["summary"] == "Good"
 
 
+@patch("credrank.api.recommend_items", return_value=FAKE_RECOMMEND)
 @patch("credrank.api.get_place_details", return_value=None)
-def test_recommend_place_not_found(mock_details):
+def test_recommend_place_not_found(mock_details, mock_recommend):
+    _ = (mock_details, mock_recommend)
     resp = client.post("/api/recommend", json={"place_id": "nonexistent"})
     assert resp.status_code == 404
