@@ -2,16 +2,20 @@
 
 from unittest.mock import patch
 
-from credrank.relevance import get_relevant_types, filter_by_relevance, ALL_TYPES
-from credrank.grid_search import _generate_subcircles, grid_search
+from credrank.grid_search import generate_subcircles, grid_search
 from credrank.models import PlaceResult
+from credrank.relevance import ALL_TYPES, filter_by_relevance, get_relevant_types
 
 
 def _make_place(place_id: str, types: list[str], lat=37.54, lng=-77.43) -> PlaceResult:
     return PlaceResult(
-        place_id=place_id, name=f"Place {place_id}",
-        types=types, rating=4.0, user_rating_count=100,
-        lat=lat, lng=lng,
+        place_id=place_id,
+        name=f"Place {place_id}",
+        types=types,
+        rating=4.0,
+        user_rating_count=100,
+        lat=lat,
+        lng=lng,
     )
 
 
@@ -21,7 +25,9 @@ def _make_place(place_id: str, types: list[str], lat=37.54, lng=-77.43) -> Place
 class TestGetRelevantTypes:
     @patch("credrank.relevance.complete")
     def test_returns_parsed_types(self, mock_complete):
-        mock_complete.return_value = '["pizza_restaurant", "italian_restaurant", "restaurant"]'
+        mock_complete.return_value = (
+            '["pizza_restaurant", "italian_restaurant", "restaurant"]'
+        )
         result = get_relevant_types("best pizza")
         assert result is not None
         assert "pizza_restaurant" in result
@@ -35,7 +41,9 @@ class TestGetRelevantTypes:
 
     @patch("credrank.relevance.complete")
     def test_validates_against_taxonomy(self, mock_complete):
-        mock_complete.return_value = '["pizza_restaurant", "fake_type_xyz", "restaurant"]'
+        mock_complete.return_value = (
+            '["pizza_restaurant", "fake_type_xyz", "restaurant"]'
+        )
         result = get_relevant_types("pizza")
         assert result is not None
         assert "pizza_restaurant" in result
@@ -77,7 +85,9 @@ class TestFilterByRelevance:
             _make_place("2", ["grocery_store"]),
             _make_place("3", ["italian_restaurant"]),
         ]
-        result = filter_by_relevance(places, ["pizza_restaurant", "italian_restaurant", "restaurant"])
+        result = filter_by_relevance(
+            places, ["pizza_restaurant", "italian_restaurant", "restaurant"]
+        )
         assert len(result) == 2
         assert result[0].place_id == "1"
         assert result[1].place_id == "3"
@@ -88,7 +98,10 @@ class TestFilterByRelevance:
         assert len(result) == 2
 
     def test_returns_all_when_no_relevant_types(self):
-        places = [_make_place("1", ["grocery_store"]), _make_place("2", ["gas_station"])]
+        places = [
+            _make_place("1", ["grocery_store"]),
+            _make_place("2", ["gas_station"]),
+        ]
         assert len(filter_by_relevance(places, [])) == 2
 
     def test_partial_type_overlap_keeps_place(self):
@@ -110,27 +123,27 @@ class TestAllTypes:
 
 class TestGenerateSubcircles:
     def test_small_radius_returns_single_circle(self):
-        circles = _generate_subcircles(37.54, -77.43, 3000)
+        circles = generate_subcircles(37.54, -77.43, 3000)
         assert len(circles) == 1
         assert circles[0] == (37.54, -77.43, 3000)
 
     def test_medium_radius_uses_hex_packing(self):
-        circles = _generate_subcircles(37.54, -77.43, 8000)
+        circles = generate_subcircles(37.54, -77.43, 8000)
         # Center (1) + at least one ring of 6
         assert len(circles) >= 7
 
     def test_large_radius_generates_many_subcircles(self):
-        circles = _generate_subcircles(37.54, -77.43, 25000)
+        circles = generate_subcircles(37.54, -77.43, 25000)
         # Should have multiple rings
         assert len(circles) >= 19
 
     def test_subcircles_have_small_radius(self):
-        circles = _generate_subcircles(37.54, -77.43, 15000)
+        circles = generate_subcircles(37.54, -77.43, 15000)
         for _, _, r in circles:
             assert r <= 2500  # MAX_SUB_RADIUS_M
 
     def test_subcircles_near_center(self):
-        circles = _generate_subcircles(37.54, -77.43, 10000)
+        circles = generate_subcircles(37.54, -77.43, 10000)
         for lat, lng, _ in circles:
             assert abs(lat - 37.54) < 0.2
             assert abs(lng - (-77.43)) < 0.2
@@ -159,7 +172,9 @@ class TestGridSearch:
     @patch("credrank.grid_search.search_places")
     def test_handles_subcircle_failure_gracefully(self, mock_search):
         place = _make_place("A", ["restaurant"])
-        mock_search.side_effect = [Exception("API error"), [place]] + [[] for _ in range(20)]
+        mock_search.side_effect = [Exception("API error"), [place]] + [
+            [] for _ in range(20)
+        ]
         results = grid_search("pizza", 37.54, -77.43, 8000)
         assert len(results) >= 1
         assert results[0].place_id == "A"

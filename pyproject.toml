@@ -1,9 +1,9 @@
 [project]
 name = "credrank"
 version = "0.1.0"
-description = "Add your description here"
+description = "Restaurant discovery engine that ranks places using Bayesian statistics instead of raw Google ratings."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.129.0",
     "google-genai>=1.63.0",
@@ -27,3 +27,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/credrank"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

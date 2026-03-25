@@ -1,0 +1,45 @@
+{
+  "name": "CredRank Dev",
+  "dockerComposeFile": "../compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/app",
+
+  // VS Code settings inside the container
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/app/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+
+  // Run after the container is created (first time only)
+  "postCreateCommand": "uv sync",
+
+  // Run every time the container starts
+  "postStartCommand": "uv run uvicorn credrank.api:app --host 0.0.0.0 --port 8000 --reload &",
+
+  // Forward port 8000 so the browser can reach it
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "CredRank API",
+      "onAutoForward": "openBrowser"
+    }
+  },
+
+  "remoteEnv": {
+    "PYTHONUNBUFFERED": "1"
+  }
+}

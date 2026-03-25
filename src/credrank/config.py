@@ -2,10 +2,11 @@ import os
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
 
 def _get_env(key: str) -> str:
-    """Load an environment variable, raising a clear error if missing."""
-    load_dotenv()
+    """Return an environment variable, raising a clear error if missing."""
     value = os.environ.get(key)
     if not value:
         raise RuntimeError(

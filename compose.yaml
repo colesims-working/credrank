@@ -1,0 +1,21 @@
+# Docker Compose for local development.
+# Usage: docker compose up
+# The app hot-reloads on file changes via volume mount + --reload.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder          # Use the builder stage (has uv + deps)
+    command: uv run uvicorn credrank.api:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for live reload — changes reflect instantly
+      - ./src:/app/src
+      - ./frontend:/app/frontend
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1

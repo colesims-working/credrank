@@ -183,3 +183,124 @@ def test_recommend_place_not_found(mock_details, mock_recommend):
     _ = (mock_details, mock_recommend)
     resp = client.post("/api/recommend", json={"place_id": "nonexistent"})
     assert resp.status_code == 404
+
+
+# ── Place ID Validation ──
+
+
+def test_place_id_rejects_path_traversal():
+    resp = client.post("/api/summarize", json={"place_id": "../../etc/passwd"})
+    assert resp.status_code == 422
+
+
+def test_place_id_rejects_empty():
+    resp = client.post("/api/summarize", json={"place_id": ""})
+    assert resp.status_code == 422
+
+
+# ── Deep Search ──
+
+
+@patch("credrank.api.get_relevant_types", return_value=None)
+@patch("credrank.api.grid_search", return_value=FAKE_PLACES)
+@patch("credrank.api.generate_subcircles", return_value=[(37.54, -77.43, 2500)] * 7)
+def test_deep_search_returns_subcircle_count(mock_subcircles, mock_grid, mock_relevant):
+    _ = (mock_subcircles, mock_grid, mock_relevant)
+    resp = client.post(
+        "/api/search",
+        json={
+            "query": "pizza",
+            "lat": 37.54,
+            "lng": -77.43,
+            "radius_m": 8000,
+            "deep_search": True,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["deep_search"] is True
+    assert data["subcircle_count"] == 7
+    assert data["result_count"] == 3
+
+
+# ── Geocode ──
+
+
+@patch("credrank.api.httpx.get")
+def test_geocode_returns_location(mock_get):
+    mock_get.return_value = type(
+        "Resp",
+        (),
+        {
+            "json": lambda self: {
+                "results": [
+                    {
+                        "geometry": {"location": {"lat": 37.54, "lng": -77.43}},
+                        "formatted_address": "Richmond, VA",
+                    }
+                ]
+            },
+            "raise_for_status": lambda self: None,
+        },
+    )()
+    resp = client.get("/api/geocode", params={"address": "Richmond"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["lat"] == 37.54
+    assert data["lng"] == -77.43
+    assert data["name"] == "Richmond, VA"
+
+
+@patch("credrank.api.httpx.get")
+def test_geocode_returns_null_on_empty_results(mock_get):
+    mock_get.return_value = type(
+        "Resp",
+        (),
+        {
+            "json": lambda self: {"results": []},
+            "raise_for_status": lambda self: None,
+        },
+    )()
+    resp = client.get("/api/geocode", params={"address": "xyzzy nowhere"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["lat"] is None
+
+
+def test_geocode_validates_address_length():
+    resp = client.get("/api/geocode", params={"address": ""})
+    assert resp.status_code == 422
+
+
+@patch("credrank.api.httpx.get")
+def test_reverse_geocode_returns_name(mock_get):
+    mock_get.return_value = type(
+        "Resp",
+        (),
+        {
+            "json": lambda self: {
+                "results": [
+                    {"formatted_address": "Richmond, VA", "types": ["locality"]}
+                ]
+            },
+            "raise_for_status": lambda self: None,
+        },
+    )()
+    resp = client.get("/api/reverse-geocode", params={"lat": 37.54, "lng": -77.43})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Richmond, VA"
+
+
+@patch("credrank.api.httpx.get")
+def test_reverse_geocode_falls_back_to_coords(mock_get):
+    mock_get.return_value = type(
+        "Resp",
+        (),
+        {
+            "json": lambda self: {"results": []},
+            "raise_for_status": lambda self: None,
+        },
+    )()
+    resp = client.get("/api/reverse-geocode", params={"lat": 37.54, "lng": -77.43})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "37.540, -77.430"

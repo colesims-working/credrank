@@ -11,3 +11,7 @@ wheels/
 
 # Environment variables
 .env
+
+# AI assistant config (local workflow only)
+AGENTS.md
+CODEX_TASKS.md

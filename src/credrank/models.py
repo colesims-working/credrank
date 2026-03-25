@@ -17,7 +17,7 @@ class PlaceSearchParams:
     query: str
     location: tuple[float, float]  # (lat, lng)
     radius_m: int
-    max_results: int = 20
+    max_results: int = 60
 
 
 @dataclass

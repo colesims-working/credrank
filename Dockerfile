@@ -14,7 +14,7 @@ WORKDIR /app
 # Copy dependency files first. Docker caches each layer, so if
 # pyproject.toml hasn't changed, it won't re-install dependencies.
 # This makes rebuilds fast (seconds instead of minutes).
-COPY pyproject.toml uv.lock* ./
+COPY pyproject.toml uv.lock* README.md ./
 
 # Install dependencies into a virtual environment
 RUN uv sync --no-dev --no-install-project

@@ -1,8 +1,19 @@
 import httpx
 import respx
 
-from credrank.maps_client import search_places
+from credrank.maps_client import haversine_m, search_places
 from credrank.models import PlaceSearchParams
+
+
+def test_haversine_known_distance() -> None:
+    """Verify haversine against a known distance (NYC to LA ≈ 3,936 km)."""
+    dist = haversine_m(40.7128, -74.0060, 34.0522, -118.2437)
+    assert 3_930_000 < dist < 3_945_000
+
+
+def test_haversine_same_point() -> None:
+    assert haversine_m(37.54, -77.43, 37.54, -77.43) == 0.0
+
 
 FAKE_RESPONSE = {
     "places": [

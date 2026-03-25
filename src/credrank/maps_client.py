@@ -47,7 +47,7 @@ DETAIL_FIELD_MASK = ",".join(
 )
 
 
-def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """Return the great-circle distance in meters between two points."""
     R = 6_371_000  # Earth radius in meters
     rlat1, rlat2 = math.radians(lat1), math.radians(lat2)
@@ -63,9 +63,7 @@ def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 def _circle_to_bounding_box(lat: float, lng: float, radius_m: int) -> dict:
     """Convert a circle (center + radius) to a rectangular locationRestriction."""
     d_lat = radius_m / 111_320
-    d_lng = radius_m / (
-        111_320 * __import__("math").cos(__import__("math").radians(lat))
-    )
+    d_lng = radius_m / (111_320 * math.cos(math.radians(lat)))
 
     return {
         "rectangle": {
@@ -138,7 +136,7 @@ def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
     body = {
         "textQuery": params.query,
         "locationRestriction": _circle_to_bounding_box(lat, lng, params.radius_m),
-        "maxResultCount": min(params.max_results, 20),
+        "maxResultCount": min(params.max_results, 60),
     }
 
     headers = {
@@ -193,7 +191,7 @@ def search_places(params: PlaceSearchParams) -> list[PlaceResult]:
     filtered = []
     for p in results:
         if p.lat is not None and p.lng is not None:
-            dist = _haversine_m(lat, lng, p.lat, p.lng)
+            dist = haversine_m(lat, lng, p.lat, p.lng)
             if dist <= params.radius_m:
                 filtered.append(p)
         else:

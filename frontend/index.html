@@ -335,20 +335,27 @@ function milesToLabel(m) { return (m / METERS_PER_MILE).toFixed(1) + ' mi'; }
 function starsStr(r) { if (!r) return ''; return '★'.repeat(Math.floor(r)) + (r - Math.floor(r) >= 0.3 ? '½' : ''); }
 function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
 
-// ═══ IP GEOLOCATION ═══
-(async function setDefaultLocation() {
-    try {
-        const r = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
-        const d = await r.json();
-        if (d.latitude && d.longitude) {
-            const label = [d.city, d.region].filter(Boolean).join(', ');
-            document.getElementById('locationInput').value = label;
-            setLocation(d.latitude, d.longitude, label);
-        }
-    } catch (e) {
+// ═══ DEFAULT LOCATION ═══
+(function setDefaultLocation() {
+    if (!navigator.geolocation) {
         document.getElementById('locationInput').value = 'Richmond, VA';
         setLocation(37.54, -77.43, 'Richmond, VA');
+        return;
     }
+    navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+            const lat = pos.coords.latitude, lng = pos.coords.longitude;
+            let label = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+            try { label = await reverseGeocodeLocation(lat, lng); } catch (e) { /* fall back to coords */ }
+            document.getElementById('locationInput').value = label;
+            setLocation(lat, lng, label);
+        },
+        () => {
+            document.getElementById('locationInput').value = 'Richmond, VA';
+            setLocation(37.54, -77.43, 'Richmond, VA');
+        },
+        { timeout: 5000 }
+    );
 })();
 
 // ═══ GEOCODING ═══
@@ -539,6 +546,7 @@ async function doSearch() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query, lat: currentLat, lng: currentLng, radius_m: Math.round(currentRadiusM), max_results: maxResults, deep_search: deep })
         });
+        if (!resp.ok) throw new Error(`Search failed (${resp.status})`);
         const data = await resp.json();
         currentResults = data.places;
         renderResults(data);
@@ -634,6 +642,7 @@ async function loadSummary(rank) {
     btn.disabled = true; btn.textContent = 'Loading...';
     try {
         const resp = await fetch('/api/summarize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ place_id: place.place_id }) });
+        if (!resp.ok) throw new Error('Summary request failed');
         const data = await resp.json();
         el.textContent = data.summary; btn.style.display = 'none';
     } catch (e) { el.textContent = 'Failed to load summary'; btn.disabled = false; btn.textContent = 'Retry'; }
@@ -650,6 +659,7 @@ async function loadRecommend(rank) {
     document.getElementById('recommendModal').classList.add('visible');
     try {
         const resp = await fetch('/api/recommend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ place_id: place.place_id }) });
+        if (!resp.ok) throw new Error('Recommend request failed');
         const data = await resp.json();
         document.getElementById('modalSubtitle').textContent = 'What to order';
         document.getElementById('modalSummary').textContent = data.summary;

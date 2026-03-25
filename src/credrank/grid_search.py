@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import math
 
-from credrank.maps_client import _haversine_m, search_places
+from credrank.maps_client import haversine_m, search_places
 from credrank.models import PlaceResult, PlaceSearchParams
 
 log = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _hex_ring_count(ring: int) -> int:
     return 1 if ring == 0 else 6 * ring
 
 
-def _generate_subcircles(
+def generate_subcircles(
     center_lat: float,
     center_lng: float,
     radius_m: int,
@@ -110,7 +110,7 @@ def grid_search(
     Deduplicates by place_id and filters to places within the original
     circle radius. Returns up to max_results unique places.
     """
-    subcircles = _generate_subcircles(center_lat, center_lng, radius_m)
+    subcircles = generate_subcircles(center_lat, center_lng, radius_m)
 
     seen_ids: set[str] = set()
     all_results: list[PlaceResult] = []
@@ -126,7 +126,7 @@ def grid_search(
             query=query,
             location=(lat, lng),
             radius_m=sub_radius,
-            max_results=20,  # Single page per subcircle for speed
+            max_results=60,  # 3 pages per subcircle
         )
 
         try:
@@ -141,7 +141,7 @@ def grid_search(
                 continue
             # Verify within the original circle
             if place.lat is not None and place.lng is not None:
-                dist = _haversine_m(center_lat, center_lng, place.lat, place.lng)
+                dist = haversine_m(center_lat, center_lng, place.lat, place.lng)
                 if dist > radius_m:
                     continue
             seen_ids.add(place.place_id)

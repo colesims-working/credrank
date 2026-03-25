@@ -6,11 +6,9 @@ from credrank.ranking import rank_places
 from credrank.summarizer import summarize_top_n
 
 QUERY = "dry needling"
-LAT, LNG = 37.603798, -77.260521  # Mechanicsville
-# LAT, LNG = 12.5463125, -70.0605124  # JOIA Aruba
+LAT, LNG = 37.603798, -77.260521  # Mechanicsville, VA
 RADIUS_MI = 20
 RADIUS_M = RADIUS_MI * 1609
-# RADIUS_M = 1000
 MAX_RESULTS = 60
 SUMMARIZE_TOP = 5
 

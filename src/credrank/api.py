@@ -7,23 +7,23 @@ import time
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from credrank.config import get_api_key
-from credrank.maps_client import search_places, get_place_details
+from credrank.grid_search import generate_subcircles, grid_search
+from credrank.maps_client import get_place_details, search_places
 from credrank.models import PlaceSearchParams
 from credrank.ranking import rank_places
-from credrank.summarizer import summarize_place
 from credrank.recommender import recommend_items
-from credrank.relevance import get_relevant_types, filter_by_relevance
-from credrank.grid_search import grid_search
+from credrank.relevance import filter_by_relevance, get_relevant_types
+from credrank.summarizer import summarize_place
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,7 +81,7 @@ class SearchResponse(BaseModel):
 
 
 class PlaceIdRequest(BaseModel):
-    place_id: str = Field(min_length=1, max_length=500)
+    place_id: str = Field(min_length=1, max_length=500, pattern=r"^[a-zA-Z0-9_-]+$")
 
 
 class SummaryResponse(BaseModel):
@@ -90,12 +90,33 @@ class SummaryResponse(BaseModel):
     summary: str
 
 
+class RecommendationItem(BaseModel):
+    item: str
+    why: str
+    mentions: int | None = None
+
+
+class AvoidItem(BaseModel):
+    item: str
+    why: str
+
+
 class RecommendResponse(BaseModel):
     place_name: str
     place_id: str
     summary: str
-    recommendations: list[dict]
-    avoid: list[dict]
+    recommendations: list[RecommendationItem]
+    avoid: list[AvoidItem]
+
+
+class GeocodeResponse(BaseModel):
+    lat: float | None
+    lng: float | None
+    name: str | None
+
+
+class ReverseGeocodeResponse(BaseModel):
+    name: str
 
 
 # ── Endpoints ──
@@ -128,8 +149,7 @@ def search(request: Request, req: SearchRequest):
     # 2) Search — standard or grid
     subcircle_count = 0
     if req.deep_search:
-        from credrank.grid_search import _generate_subcircles
-        subcircles = _generate_subcircles(req.lat, req.lng, req.radius_m)
+        subcircles = generate_subcircles(req.lat, req.lng, req.radius_m)
         subcircle_count = len(subcircles)
         log.debug(
             "api.search.subcircles query=%r count=%d",
@@ -160,9 +180,11 @@ def search(request: Request, req: SearchRequest):
             duration_ms,
         )
         return SearchResponse(
-            query=req.query, result_count=0,
+            query=req.query,
+            result_count=0,
             deep_search=req.deep_search,
-            subcircle_count=subcircle_count, places=[],
+            subcircle_count=subcircle_count,
+            places=[],
         )
 
     # 3) Filter by relevance
@@ -187,10 +209,12 @@ def search(request: Request, req: SearchRequest):
             duration_ms,
         )
         return SearchResponse(
-            query=req.query, result_count=0,
+            query=req.query,
+            result_count=0,
             filtered_count=filtered_count,
             deep_search=req.deep_search,
-            subcircle_count=subcircle_count, places=[],
+            subcircle_count=subcircle_count,
+            places=[],
         )
 
     # 4) Rank
@@ -207,19 +231,21 @@ def search(request: Request, req: SearchRequest):
             entry["credscore"],
             entry["bayesian_avg"],
         )
-        results.append(PlaceResponse(
-            rank=entry["rank"],
-            credscore=round(entry["credscore"], 1),
-            bayesian_avg=round(entry["bayesian_avg"], 3),
-            place_id=p.place_id,
-            name=p.name,
-            rating=p.rating,
-            user_rating_count=p.user_rating_count,
-            address=p.address,
-            lat=p.lat,
-            lng=p.lng,
-            types=p.types,
-        ))
+        results.append(
+            PlaceResponse(
+                rank=entry["rank"],
+                credscore=round(entry["credscore"], 1),
+                bayesian_avg=round(entry["bayesian_avg"], 3),
+                place_id=p.place_id,
+                name=p.name,
+                rating=p.rating,
+                user_rating_count=p.user_rating_count,
+                address=p.address,
+                lat=p.lat,
+                lng=p.lng,
+                types=p.types,
+            )
+        )
 
     duration_ms = int((time.perf_counter() - started_at) * 1000)
     log.info(
@@ -276,9 +302,11 @@ def recommend(request: Request, req: PlaceIdRequest):
     return RecommendResponse(**result)
 
 
-@app.get("/api/geocode")
-def geocode(address: str):
+@app.get("/api/geocode", response_model=GeocodeResponse)
+@limiter.limit("30/minute")
+def geocode(request: Request, address: str = Query(min_length=1, max_length=500)):
     """Server-side geocoding to avoid exposing Maps API key to browser."""
+    _ = request
     log.info("api.geocode.start address=%r", address)
     url = "https://maps.googleapis.com/maps/api/geocode/json"
     try:
@@ -310,9 +338,11 @@ def geocode(address: str):
     return {"lat": None, "lng": None, "name": None}
 
 
-@app.get("/api/reverse-geocode")
-def reverse_geocode(lat: float, lng: float):
+@app.get("/api/reverse-geocode", response_model=ReverseGeocodeResponse)
+@limiter.limit("30/minute")
+def reverse_geocode(request: Request, lat: float, lng: float):
     """Reverse geocode coordinates to a human-readable name."""
+    _ = request
     log.info("api.reverse_geocode.start lat=%.6f lng=%.6f", lat, lng)
     url = "https://maps.googleapis.com/maps/api/geocode/json"
     try:
@@ -324,9 +354,13 @@ def reverse_geocode(lat: float, lng: float):
         resp.raise_for_status()
     except httpx.TimeoutException as exc:
         log.warning("api.reverse_geocode.timeout lat=%.6f lng=%.6f", lat, lng)
-        raise HTTPException(status_code=504, detail="Reverse geocoding timed out") from exc
+        raise HTTPException(
+            status_code=504, detail="Reverse geocoding timed out"
+        ) from exc
     except httpx.HTTPError as exc:
-        log.warning("api.reverse_geocode.error lat=%.6f lng=%.6f error=%s", lat, lng, exc)
+        log.warning(
+            "api.reverse_geocode.error lat=%.6f lng=%.6f error=%s", lat, lng, exc
+        )
         raise HTTPException(status_code=502, detail="Reverse geocoding failed") from exc
 
     data = resp.json()
