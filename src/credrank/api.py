@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from credrank.auth import BasicAuthMiddleware, validate_auth_config
 from credrank.config import get_api_key
 from credrank.grid_search import generate_subcircles, grid_search
 from credrank.maps_client import get_place_details, search_places
@@ -31,18 +33,27 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+validate_auth_config()
+
 app = FastAPI(title="CredRank", version="0.3.0")
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# TODO(P0): Tighten CORS before public launch — restrict to credrank.org
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Middleware order note: last added = outermost = runs first. We want
+# CORS preflight (OPTIONS) to be handled before auth rejects it, so
+# auth is added first (inner) and CORS second (outer, only if enabled).
+app.add_middleware(BasicAuthMiddleware)
+
+_cors_origins_env = os.environ.get("CORS_ORIGINS", "").strip()
+if _cors_origins_env:
+    _origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 
 # ── Request / Response Models ──
@@ -382,6 +393,15 @@ def reverse_geocode(request: Request, lat: float, lng: float):
     fallback = f"{lat:.3f}, {lng:.3f}"
     log.info("api.reverse_geocode.done lat=%.6f lng=%.6f found=false", lat, lng)
     return {"name": fallback}
+
+
+# ── Health ──
+
+
+@app.get("/health")
+def health():
+    """Unauthenticated liveness probe for Railway."""
+    return {"status": "ok"}
 
 
 # ── Static files ──

@@ -19,3 +19,6 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      # Dev convenience: disable auth for local compose runs. Production
+      # uses Railway env vars, not this file.
+      - ALLOW_UNAUTH=1

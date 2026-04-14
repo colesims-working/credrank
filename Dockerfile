@@ -53,5 +53,9 @@ EXPOSE ${PORT}
 # --host 0.0.0.0: Listen on all interfaces (required in containers)
 # --port $PORT: Use Railway's assigned port
 # --workers 2: Two worker processes (good for a small instance)
+# --proxy-headers + --forwarded-allow-ips="*": trust X-Forwarded-* from
+#   Railway's ingress proxy so request.client.host is the real client IP
+#   (slowapi rate limiting is per-IP; without this it sees the proxy IP
+#   and becomes effectively global).
 # We do NOT use --reload in production (that's for development only)
-CMD uvicorn credrank.api:app --host 0.0.0.0 --port ${PORT} --workers 2
+CMD uvicorn credrank.api:app --host 0.0.0.0 --port ${PORT} --workers 2 --proxy-headers --forwarded-allow-ips="*"
