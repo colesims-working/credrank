@@ -9,7 +9,13 @@ os.environ.setdefault("ALLOW_UNAUTH", "1")
 
 
 def main():
-    uvicorn.run("credrank.api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "credrank.api:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        reload_dirs=["src", "frontend"],
+    )
 
 
 if __name__ == "__main__":

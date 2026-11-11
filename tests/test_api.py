@@ -5,7 +5,13 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from credrank.api import app
-from credrank.models import PlaceResult, Review
+from credrank.models import (
+    GridCoverage,
+    GridSearchResult,
+    PlaceResult,
+    Review,
+    SearchIntent,
+)
 
 client = TestClient(app)
 FAKE_RECOMMEND = {
@@ -63,10 +69,10 @@ FAKE_DETAIL = PlaceResult(
 )
 
 
-@patch("credrank.api.get_relevant_types", return_value=None)
-@patch("credrank.api.search_places", return_value=FAKE_PLACES)
-def test_search_returns_ranked_results(mock_search, mock_relevant):
-    _ = (mock_search, mock_relevant)
+@patch("credrank.api.build_intent", return_value=SearchIntent())
+@patch("credrank.api.search_places_with_intent", return_value=FAKE_PLACES)
+def test_search_returns_ranked_results(mock_search, mock_intent):
+    _ = (mock_search, mock_intent)
     resp = client.post(
         "/api/search",
         json={
@@ -89,10 +95,10 @@ def test_search_returns_ranked_results(mock_search, mock_relevant):
         assert 0.0 <= p["credscore"] <= 100.0
 
 
-@patch("credrank.api.get_relevant_types", return_value=None)
-@patch("credrank.api.search_places", return_value=[])
-def test_search_empty_results(mock_search, mock_relevant):
-    _ = (mock_search, mock_relevant)
+@patch("credrank.api.build_intent", return_value=SearchIntent())
+@patch("credrank.api.search_places_with_intent", return_value=[])
+def test_search_empty_results(mock_search, mock_intent):
+    _ = (mock_search, mock_intent)
     resp = client.post(
         "/api/search",
         json={
@@ -108,16 +114,16 @@ def test_search_empty_results(mock_search, mock_relevant):
     assert data["places"] == []
 
 
-@patch("credrank.api.get_relevant_types", return_value=None)
-def test_search_validates_required_fields(mock_relevant):
-    _ = mock_relevant
+@patch("credrank.api.build_intent", return_value=SearchIntent())
+def test_search_validates_required_fields(mock_intent):
+    _ = mock_intent
     resp = client.post("/api/search", json={"lat": 37.54, "lng": -77.43})
     assert resp.status_code == 422
 
 
-@patch("credrank.api.get_relevant_types", return_value=None)
-def test_search_validates_lat_bounds(mock_relevant):
-    _ = mock_relevant
+@patch("credrank.api.build_intent", return_value=SearchIntent())
+def test_search_validates_lat_bounds(mock_intent):
+    _ = mock_intent
     resp = client.post(
         "/api/search",
         json={
@@ -129,9 +135,9 @@ def test_search_validates_lat_bounds(mock_relevant):
     assert resp.status_code == 422
 
 
-@patch("credrank.api.get_relevant_types", return_value=None)
-def test_search_validates_radius_cap(mock_relevant):
-    _ = mock_relevant
+@patch("credrank.api.build_intent", return_value=SearchIntent())
+def test_search_validates_radius_cap(mock_intent):
+    _ = mock_intent
     resp = client.post(
         "/api/search",
         json={
@@ -201,11 +207,36 @@ def test_place_id_rejects_empty():
 # ── Deep Search ──
 
 
-@patch("credrank.api.get_relevant_types", return_value=None)
-@patch("credrank.api.grid_search", return_value=FAKE_PLACES)
-@patch("credrank.api.generate_subcircles", return_value=[(37.54, -77.43, 2500)] * 7)
-def test_deep_search_returns_subcircle_count(mock_subcircles, mock_grid, mock_relevant):
-    _ = (mock_subcircles, mock_grid, mock_relevant)
+FAKE_COMPLETE_COVERAGE = GridCoverage(
+    complete=True,
+    reason=None,
+    cells_searched=7,
+    cells_failed=0,
+    cells_saturated=0,
+    raw_count=3,
+    deduped_count=3,
+    in_radius_count=3,
+)
+
+FAKE_INCOMPLETE_COVERAGE = GridCoverage(
+    complete=False,
+    reason="2 saturated cell(s) reached minimum radius",
+    cells_searched=15,
+    cells_failed=0,
+    cells_saturated=2,
+    raw_count=50,
+    deduped_count=3,
+    in_radius_count=3,
+)
+
+
+@patch("credrank.api.build_intent", return_value=SearchIntent())
+@patch(
+    "credrank.api.grid_search",
+    return_value=GridSearchResult(FAKE_PLACES, coverage=FAKE_COMPLETE_COVERAGE),
+)
+def test_deep_search_returns_complete_coverage(mock_grid, mock_intent):
+    _ = (mock_grid, mock_intent)
     resp = client.post(
         "/api/search",
         json={
@@ -219,8 +250,57 @@ def test_deep_search_returns_subcircle_count(mock_subcircles, mock_grid, mock_re
     assert resp.status_code == 200
     data = resp.json()
     assert data["deep_search"] is True
-    assert data["subcircle_count"] == 7
     assert data["result_count"] == 3
+    assert data["coverage"] is not None
+    assert data["coverage"]["complete"] is True
+    assert data["coverage"]["cells_searched"] == 7
+    assert data["coverage"]["cells_saturated"] == 0
+    assert data["coverage"]["reason"] is None
+
+
+@patch("credrank.api.build_intent", return_value=SearchIntent())
+@patch(
+    "credrank.api.grid_search",
+    return_value=GridSearchResult(FAKE_PLACES, coverage=FAKE_INCOMPLETE_COVERAGE),
+)
+def test_deep_search_surfaces_incomplete_coverage(mock_grid, mock_intent):
+    _ = (mock_grid, mock_intent)
+    resp = client.post(
+        "/api/search",
+        json={
+            "query": "pizza",
+            "lat": 37.54,
+            "lng": -77.43,
+            "radius_m": 8000,
+            "deep_search": True,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["coverage"]["complete"] is False
+    assert "minimum radius" in data["coverage"]["reason"]
+    assert data["coverage"]["cells_saturated"] == 2
+    assert data["coverage"]["cells_searched"] == 15
+
+
+@patch("credrank.api.build_intent", return_value=SearchIntent())
+@patch("credrank.api.search_places_with_intent", return_value=FAKE_PLACES)
+def test_non_deep_search_has_no_coverage(mock_search, mock_intent):
+    _ = (mock_search, mock_intent)
+    resp = client.post(
+        "/api/search",
+        json={
+            "query": "pizza",
+            "lat": 37.54,
+            "lng": -77.43,
+            "radius_m": 8000,
+            "deep_search": False,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["deep_search"] is False
+    assert data["coverage"] is None
 
 
 # ── Geocode ──

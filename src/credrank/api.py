@@ -18,13 +18,17 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from credrank.auth import BasicAuthMiddleware, validate_auth_config
+from credrank.cache import MISS, all_stats, geocode_cache
 from credrank.config import get_api_key
-from credrank.grid_search import generate_subcircles, grid_search
-from credrank.maps_client import get_place_details, search_places
-from credrank.models import PlaceSearchParams
+from credrank.grid_search import grid_search
+from credrank.maps_client import (
+    get_place_details,
+    search_places_with_intent,
+)
+from credrank.models import GridCoverage, PlaceSearchParams
 from credrank.ranking import rank_places
 from credrank.recommender import recommend_items
-from credrank.relevance import filter_by_relevance, get_relevant_types
+from credrank.relevance import TABLE_A_FILTERABLE, build_intent, filter_by_intent
 from credrank.summarizer import summarize_place
 
 logging.basicConfig(
@@ -82,12 +86,30 @@ class PlaceResponse(BaseModel):
     types: list[str]
 
 
+class CoverageResponse(BaseModel):
+    """Grid-search coverage metadata surfaced to the frontend.
+
+    `complete` is False when the server couldn't guarantee full recall
+    (a cell failed, a saturated cell couldn't subdivide further, or the
+    safety cap tripped). The frontend shows a warning banner in that case.
+    """
+
+    complete: bool
+    reason: str | None = None
+    cells_searched: int
+    cells_failed: int
+    cells_saturated: int
+    raw_count: int
+    deduped_count: int
+    in_radius_count: int
+
+
 class SearchResponse(BaseModel):
     query: str
     result_count: int
     filtered_count: int = 0
     deep_search: bool = False
-    subcircle_count: int = 0
+    coverage: CoverageResponse | None = None
     places: list[PlaceResponse]
 
 
@@ -149,30 +171,42 @@ def search(request: Request, req: SearchRequest):
         req.deep_search,
     )
 
-    # 1) LLM relevance filter (one call per search)
-    relevant_types = get_relevant_types(req.query)
+    # 1) Extract structured intent — LLM first, deterministic fallback.
+    intent = build_intent(req.query)
     log.debug(
-        "api.search.relevance query=%r relevant_type_count=%d",
+        "api.search.intent query=%r kind=%s included=%s required=%s",
         req.query,
-        len(relevant_types or []),
+        intent.query_kind,
+        intent.included_types,
+        intent.required_terms,
     )
 
-    # 2) Search — standard or grid
-    subcircle_count = 0
+    # 2) Search — grid search for deep, otherwise intent-aware standard search.
+    grid_coverage: GridCoverage | None = None
     if req.deep_search:
-        subcircles = generate_subcircles(req.lat, req.lng, req.radius_m)
-        subcircle_count = len(subcircles)
-        log.debug(
-            "api.search.subcircles query=%r count=%d",
-            req.query,
-            subcircle_count,
-        )
-        places = grid_search(
+        # Grid search can push a single Table A type to the server side.
+        # If the intent spans multiple types we let grid search run broad
+        # and rely on post-filter to clean up — avoids exploding cost to
+        # num_cells * num_types requests.
+        server_types = [
+            t for t in intent.included_types if t in TABLE_A_FILTERABLE
+        ]
+        grid_included_type = server_types[0] if len(server_types) == 1 else None
+        grid_result = grid_search(
             query=req.query,
             center_lat=req.lat,
             center_lng=req.lng,
             radius_m=req.radius_m,
-            max_results=req.max_results,
+            included_type=grid_included_type,
+        )
+        places = list(grid_result)
+        grid_coverage = grid_result.coverage
+        log.debug(
+            "api.search.grid query=%r cells=%d saturated=%d complete=%s",
+            req.query,
+            grid_coverage.cells_searched,
+            grid_coverage.cells_saturated,
+            grid_coverage.complete,
         )
     else:
         params = PlaceSearchParams(
@@ -181,7 +215,9 @@ def search(request: Request, req: SearchRequest):
             radius_m=req.radius_m,
             max_results=min(req.max_results, 60),
         )
-        places = search_places(params)
+        places = search_places_with_intent(params, intent)
+
+    coverage_response = _coverage_to_response(grid_coverage)
 
     if not places:
         duration_ms = int((time.perf_counter() - started_at) * 1000)
@@ -194,14 +230,14 @@ def search(request: Request, req: SearchRequest):
             query=req.query,
             result_count=0,
             deep_search=req.deep_search,
-            subcircle_count=subcircle_count,
+            coverage=coverage_response,
             places=[],
         )
 
-    # 3) Filter by relevance
+    # 3) Client-side post-filter by intent (catches Google false positives
+    #    and keeps ambiguous matches with name/summary evidence).
     raw_count = len(places)
-    if relevant_types:
-        places = filter_by_relevance(places, relevant_types)
+    places = filter_by_intent(places, intent)
     filtered_count = raw_count - len(places)
     log.info(
         "api.search.filter query=%r raw_count=%d filtered_count=%d remaining=%d",
@@ -224,15 +260,16 @@ def search(request: Request, req: SearchRequest):
             result_count=0,
             filtered_count=filtered_count,
             deep_search=req.deep_search,
-            subcircle_count=subcircle_count,
+            coverage=coverage_response,
             places=[],
         )
 
-    # 4) Rank
+    # 4) Rank — then truncate to the user's requested display count.
     ranked = rank_places(places)
+    ranked_top = ranked[: req.max_results]
 
     results = []
-    for entry in ranked:
+    for entry in ranked_top:
         p = entry["place"]
         log.debug(
             "api.search.result rank=%d place_id=%s name=%r credscore=%.1f bayesian_avg=%.3f",
@@ -260,12 +297,13 @@ def search(request: Request, req: SearchRequest):
 
     duration_ms = int((time.perf_counter() - started_at) * 1000)
     log.info(
-        "api.search.done query=%r result_count=%d filtered_count=%d deep_search=%s subcircle_count=%d duration_ms=%d",
+        "api.search.done query=%r result_count=%d filtered_count=%d "
+        "deep_search=%s coverage_complete=%s duration_ms=%d",
         req.query,
         len(results),
         filtered_count,
         req.deep_search,
-        subcircle_count,
+        grid_coverage.complete if grid_coverage else None,
         duration_ms,
     )
     return SearchResponse(
@@ -273,8 +311,26 @@ def search(request: Request, req: SearchRequest):
         result_count=len(results),
         filtered_count=filtered_count,
         deep_search=req.deep_search,
-        subcircle_count=subcircle_count,
+        coverage=coverage_response,
         places=results,
+    )
+
+
+def _coverage_to_response(
+    coverage: GridCoverage | None,
+) -> CoverageResponse | None:
+    """Convert a GridCoverage dataclass to the pydantic response model."""
+    if coverage is None:
+        return None
+    return CoverageResponse(
+        complete=coverage.complete,
+        reason=coverage.reason,
+        cells_searched=coverage.cells_searched,
+        cells_failed=coverage.cells_failed,
+        cells_saturated=coverage.cells_saturated,
+        raw_count=coverage.raw_count,
+        deduped_count=coverage.deduped_count,
+        in_radius_count=coverage.in_radius_count,
     )
 
 
@@ -316,8 +372,18 @@ def recommend(request: Request, req: PlaceIdRequest):
 @app.get("/api/geocode", response_model=GeocodeResponse)
 @limiter.limit("30/minute")
 def geocode(request: Request, address: str = Query(min_length=1, max_length=500)):
-    """Server-side geocoding to avoid exposing Maps API key to browser."""
+    """Server-side geocoding to avoid exposing Maps API key to browser.
+
+    Results (including misses) are cached — geocoding is billed per
+    request and "Richmond, VA" doesn't move.
+    """
     _ = request
+    cache_key = ("fwd", address.strip().lower())
+    cached = geocode_cache.get(cache_key)
+    if cached is not MISS:
+        log.info("api.geocode.cache_hit address=%r", address)
+        return cached
+
     log.info("api.geocode.start address=%r", address)
     url = "https://maps.googleapis.com/maps/api/geocode/json"
     try:
@@ -343,17 +409,32 @@ def geocode(request: Request, address: str = Query(min_length=1, max_length=500)
             "name": data["results"][0]["formatted_address"],
         }
         log.info("api.geocode.done address=%r found=true", address)
+        geocode_cache.set(cache_key, result)
         return result
 
     log.info("api.geocode.done address=%r found=false", address)
-    return {"lat": None, "lng": None, "name": None}
+    result = {"lat": None, "lng": None, "name": None}
+    geocode_cache.set(cache_key, result)
+    return result
 
 
 @app.get("/api/reverse-geocode", response_model=ReverseGeocodeResponse)
 @limiter.limit("30/minute")
 def reverse_geocode(request: Request, lat: float, lng: float):
-    """Reverse geocode coordinates to a human-readable name."""
+    """Reverse geocode coordinates to a human-readable name.
+
+    Cached with coordinates rounded to 3 decimals (~110m) — the result
+    is a locality/neighborhood label, so nearby points share it. This
+    also collapses the billed call fired on every page load when the
+    browser grants geolocation.
+    """
     _ = request
+    cache_key = ("rev", round(lat, 3), round(lng, 3))
+    cached = geocode_cache.get(cache_key)
+    if cached is not MISS:
+        log.info("api.reverse_geocode.cache_hit lat=%.6f lng=%.6f", lat, lng)
+        return cached
+
     log.info("api.reverse_geocode.start lat=%.6f lng=%.6f", lat, lng)
     url = "https://maps.googleapis.com/maps/api/geocode/json"
     try:
@@ -388,11 +469,15 @@ def reverse_geocode(request: Request, lat: float, lng: float):
             data["results"][0],
         )
         log.info("api.reverse_geocode.done lat=%.6f lng=%.6f found=true", lat, lng)
-        return {"name": short["formatted_address"]}
+        result = {"name": short["formatted_address"]}
+        geocode_cache.set(cache_key, result)
+        return result
 
     fallback = f"{lat:.3f}, {lng:.3f}"
     log.info("api.reverse_geocode.done lat=%.6f lng=%.6f found=false", lat, lng)
-    return {"name": fallback}
+    result = {"name": fallback}
+    geocode_cache.set(cache_key, result)
+    return result
 
 
 # ── Health ──
@@ -402,6 +487,13 @@ def reverse_geocode(request: Request, lat: float, lng: float):
 def health():
     """Unauthenticated liveness probe for Railway."""
     return {"status": "ok"}
+
+
+@app.get("/api/stats")
+def cache_stats():
+    """Cache hit/miss counters — a quick read on how much API spend the
+    caches are absorbing. Auth-protected like every other endpoint."""
+    return {"caches": all_stats()}
 
 
 # ── Static files ──

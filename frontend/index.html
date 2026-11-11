@@ -111,6 +111,24 @@
         .results-count { font-size: 11px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; color: var(--text-tertiary); }
         .results-count strong { color: var(--accent); font-weight: 600; }
         .results-meta { font-size: 10px; color: var(--text-tertiary); }
+        .coverage-warning {
+            margin: 0 20px 10px; padding: 10px 12px;
+            background: rgba(212, 112, 32, 0.08);
+            border: 1px solid rgba(212, 112, 32, 0.35);
+            border-left-width: 3px;
+            border-radius: var(--radius);
+            font-size: 12px; color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .coverage-warning .coverage-title {
+            font-weight: 600; color: var(--score-mid);
+            text-transform: uppercase; letter-spacing: 0.8px; font-size: 10px;
+            margin-bottom: 4px; display: block;
+        }
+        .coverage-warning .coverage-stats {
+            display: block; margin-top: 6px; color: var(--text-tertiary);
+            font-size: 10px; font-variant-numeric: tabular-nums;
+        }
 
         .result-card {
             display: flex; gap: 14px; padding: 14px 20px;
@@ -285,7 +303,7 @@
 </main>
 
 <div class="pro-bar" id="proBar">
-    <label title="Search overlapping areas to find 60+ results. Slower but more thorough.">
+    <label title="Broader coverage within API limits — tiles the area with overlapping cells and adaptively drills into dense spots. Slower, and may still be incomplete in very dense areas; a warning is shown if so.">
         <input type="checkbox" id="deepSearchToggle">
         Deep search <span class="pro-badge">Pro</span>
     </label>
@@ -556,7 +574,10 @@ async function doSearch() {
         map.setView([currentLat, currentLng], zoom);
         const parts = [`${data.result_count} results`];
         if (data.filtered_count) parts.push(`${data.filtered_count} irrelevant filtered`);
-        if (data.subcircle_count) parts.push(`${data.subcircle_count} areas searched`);
+        if (data.coverage) {
+            parts.push(`${data.coverage.cells_searched} cells searched`);
+            if (!data.coverage.complete) parts.push('partial coverage');
+        }
         setStatus(parts.join(' · '), `"${data.query}"`);
     } catch (e) {
         document.getElementById('resultsPanel').innerHTML = `
@@ -570,18 +591,37 @@ async function doSearch() {
 }
 
 // ═══ RENDER ═══
+function renderCoverageWarning(coverage) {
+    if (!coverage || coverage.complete) return '';
+    const reason = coverage.reason ? escapeHtml(coverage.reason) : 'coverage may be partial';
+    const stats = [
+        `${coverage.cells_searched} cells searched`,
+        `${coverage.cells_saturated} saturated`,
+        coverage.cells_failed ? `${coverage.cells_failed} failed` : null,
+        `${coverage.in_radius_count} unique places`,
+    ].filter(Boolean).join(' · ');
+    return `
+        <div class="coverage-warning" role="status" aria-live="polite">
+            <span class="coverage-title">Results may be incomplete</span>
+            ${reason}. Broader coverage wasn't possible within API limits — try narrowing the radius or a more specific query.
+            <span class="coverage-stats">${stats}</span>
+        </div>`;
+}
+
 function renderResults(data) {
     const panel = document.getElementById('resultsPanel');
     if (!data.places.length) {
-        panel.innerHTML = `<div class="empty-state"><div class="empty-state-icon" aria-hidden="true">∅</div><div class="empty-state-title">Nothing here</div><div class="empty-state-text">No results in this area. Try expanding the radius or changing your search.</div></div>`;
+        const warning = renderCoverageWarning(data.coverage);
+        panel.innerHTML = `${warning}<div class="empty-state"><div class="empty-state-icon" aria-hidden="true">∅</div><div class="empty-state-title">Nothing here</div><div class="empty-state-text">No results in this area. Try expanding the radius or changing your search.</div></div>`;
         return;
     }
     const metaParts = [];
     if (data.filtered_count) metaParts.push(`${data.filtered_count} filtered`);
-    if (data.subcircle_count) metaParts.push(`${data.subcircle_count} areas`);
+    if (data.coverage) metaParts.push(`${data.coverage.cells_searched} cells`);
     const metaHtml = metaParts.length ? `<span class="results-meta">${metaParts.join(' · ')}</span>` : '';
 
     let html = `<div class="results-header"><div class="results-count"><strong>${data.result_count}</strong> ranked for "${escapeHtml(data.query)}"</div>${metaHtml}</div>`;
+    html += renderCoverageWarning(data.coverage);
     html += data.places.map((p, i) => `
         <div class="result-card" id="card-${p.rank}" tabindex="0" role="button"
              aria-label="${escapeHtml(p.name)}, rank ${p.rank}, CredScore ${Math.round(p.credscore)} ${getScoreLabel(p.credscore)}"
